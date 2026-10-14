@@ -28,3 +28,6 @@ include = ["trader*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+trader = ["static/*"]

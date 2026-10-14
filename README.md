@@ -25,6 +25,31 @@ the budget you set, or the local model. His journal lives in `#trades`.
 | **Reports** | A daily journal in `#trades` (trades, why, P&L, or "no trade today, because…") and the P&L chart. |
 | **Stays safe** | Paper money first. Every **live** trade waits for your 👍. His wallet can trade but **never withdraw**. |
 
+## His dashboard — http://localhost:8767
+
+`trader run` also starts his own dashboard (AMO is on 8765, Scholar on 8766). Open **http://localhost:8767**
+on the Mac:
+
+- **Money:** paper or live, account value, today's and total P&L, trades this week vs the minimum of 2,
+  and the P&L chart (hover for each day, or "Show as table").
+- **Positions and plans:** open positions with live P&L and a **Close** button, plus plans waiting for a
+  trigger or for your 👍.
+- **Scan now:** what's setting up right now, or the market reason to pass. It's read-only and never places a
+  trade.
+- **📚 Strat documents:** drag in PDFs, Word docs or notes, or tap to choose them. Trader reads them at once
+  and uses them when he writes a thesis, reviews a trade or answers you. You can also search them and delete
+  your own uploads; the built-in playbook stays.
+- **Ask Trader:** a question answered from the charts, his journal and your documents (☁️ or 🏠).
+- **Strat read** for any ticker, and **Backtest** with the same rules. Results feed his learning.
+- **Learning:** what he's learned per pattern (benched ones included), his lessons, the journal, and today's
+  passes and incidents.
+
+`trader dash` opens only the dashboard (no trading), for example to upload documents while he's off.
+
+**From your phone:** in `.env` set `TRADER_DASH_HOST=0.0.0.0` and a long `TRADER_DASH_KEY`, restart, and open
+`http://<the Mac's Wi-Fi address>:8767/?key=<your key>` once; the phone remembers the key. Without a key the
+dashboard only answers this Mac. Trades can't be placed from the dashboard, only closed.
+
 ## Setup (on the Mac, one command at a time)
 
 1. **Python 3.10+** (macOS's built-in `python3` is 3.9). Install Python 3.12 from python.org. Then, in this
@@ -59,9 +84,11 @@ the budget you set, or the local model. His journal lives in `#trades`.
    ```bash
    trader run
    ```
+   Then open **http://localhost:8767**, his dashboard.
 7. In the hub → 🔁 Routines, **resume "Daily trading report"** (weekdays 16:30). If it's off, Trader still
    posts his report as a finding in `#trades` and records the day's P&L.
-8. **Strat documents:** put your Strat PDFs, notes or Word docs in `~/Documents/Trader Strat Docs`. He
+8. **Strat documents:** upload them on the dashboard (📚 Strat documents), or put them in
+   `~/Documents/Trader Strat Docs`; it's the same folder. He
    always reads [`docs/strat/`](docs/strat/) too: the playbook (forked from AMO's Strat rules) and your rules.
 
 **Real money later:** [docs/HYPERLIQUID_SETUP.md](docs/HYPERLIQUID_SETUP.md) gives Trader his own API
@@ -138,6 +165,7 @@ trader/
   journal.py      Trader's own memory (SQLite in ~/.trader) — never uploaded
   brain.py        personality; thinking only through the hub's shared brain
   connector.py    the Family Hub connection
+  dashboard.py    his dashboard (port 8767) + static/index.html
   wallet.py       his API wallet (trade-only)
   family/         hub_client.py + family_brain.py, copied unchanged from AIFAMINTERFACE
 ```

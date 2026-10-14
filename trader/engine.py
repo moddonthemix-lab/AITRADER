@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable
@@ -80,6 +81,7 @@ class Engine:
         self.memories: list[dict[str, Any]] = []
         self._universe: tuple[float, list[Instrument]] = (0.0, [])
         self.last_scan: strategy.Scan | None = None
+        self.lock = threading.RLock()  # the trading loop and the dashboard never touch a position at once
 
     def stamp(self) -> str:
         """Now, by Trader's clock, as the journal stores it (UTC)."""
@@ -101,6 +103,10 @@ class Engine:
 
     def step(self) -> None:
         """One minute of work."""
+        with self.lock:
+            self._step()
+
+    def _step(self) -> None:
         now = self.clock()
         self.manage_positions()
         self.expire_plans(now)

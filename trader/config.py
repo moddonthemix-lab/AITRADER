@@ -123,6 +123,13 @@ class Settings:
     local_model: str = field(default_factory=lambda: _env("LOCAL_MODEL", "qwen3:8b"))
     hub_enabled: bool = field(default_factory=lambda: _flag("TRADER_HUB", "1"))
 
+    # ---- the dashboard (http://localhost:8767). This Mac only, unless TRADER_DASH_HOST=0.0.0.0 (your Wi-Fi),
+    # which needs TRADER_DASH_KEY.
+    dash_enabled: bool = field(default_factory=lambda: _flag("TRADER_DASH", "1"))
+    dash_host: str = field(default_factory=lambda: _env("TRADER_DASH_HOST", "127.0.0.1"))
+    dash_port: int = field(default_factory=lambda: int(_env("TRADER_DASH_PORT", "8767")))
+    dash_key: str = field(default_factory=lambda: _env("TRADER_DASH_KEY", "").strip())
+
     @property
     def db_file(self) -> str:
         return self.db_path or str(Path(self.home).expanduser() / "trader.db")

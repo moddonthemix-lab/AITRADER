@@ -1,7 +1,8 @@
 """`trader` — the command line.
 
     trader doctor                 check everything (hub, brains, market data, Hyperliquid, wallet, documents)
-    trader run                    start Trader: the hub connection and the trading loop (leave it running)
+    trader run                    start Trader: the hub connection, the trading loop and the dashboard
+    trader dash                   only the dashboard (http://localhost:8767): documents, backtests, journal
     trader markets                the stock markets Trader would scan right now (liquid ones only)
     trader scan                   one scan: ranked setups, or the market reason to pass (no orders)
     trader read NVDA              The Strat read for a ticker
@@ -150,6 +151,13 @@ def cmd_run(_: argparse.Namespace) -> int:
         logging.info("connected to the Family Hub")
     else:
         logging.info("no hub connection (HUB_TOKEN not set) — trading %s only, reports stay local", engine.mode)
+    if settings.dash_enabled:
+        from .dashboard import serve
+
+        try:
+            serve(engine)
+        except (OSError, RuntimeError) as e:
+            logging.warning("dashboard not started: %s", e)
     logging.info("Trader is running in %s mode. Ctrl+C to stop.", engine.mode.upper())
     try:
         while not stop.is_set():
@@ -162,6 +170,20 @@ def cmd_run(_: argparse.Namespace) -> int:
         pass
     if conn:
         conn.stop()
+    return 0
+
+
+def cmd_dash(_: argparse.Namespace) -> int:
+    """Only the dashboard (no trading loop) — e.g. to upload documents or backtest while Trader is off."""
+    from .dashboard import serve
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    srv = serve(make_engine())
+    print(f"Dashboard: http://localhost:{srv.server_address[1]}  (Ctrl+C to stop)")
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        srv.shutdown()
     return 0
 
 
@@ -318,7 +340,7 @@ def cmd_docs(a: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="trader", description="Trader — The Strat on Hyperliquid's stock markets")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("doctor", cmd_doctor), ("run", cmd_run), ("markets", cmd_markets), ("scan", cmd_scan),
+    for name, fn in (("doctor", cmd_doctor), ("run", cmd_run), ("dash", cmd_dash), ("markets", cmd_markets), ("scan", cmd_scan),
                      ("positions", cmd_positions), ("stats", cmd_stats), ("lessons", cmd_lessons)):
         sub.add_parser(name).set_defaults(fn=fn)
     s = sub.add_parser("read")
