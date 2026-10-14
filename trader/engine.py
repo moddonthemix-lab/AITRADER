@@ -62,7 +62,7 @@ def inst_from(row: dict[str, Any]) -> Instrument:
     return Instrument(coin=row["coin"], dex=row.get("dex") or row["coin"].split(":")[0], ticker=row.get("ticker") or "",
                       chart=row.get("chart") or "", sz_decimals=int(row.get("sz_decimals") or 2),
                       max_leverage=int(row.get("max_leverage") or 1), only_isolated=bool(row.get("only_isolated")),
-                      day_volume=0, mark=0)
+                      day_volume=0, mark=0, collateral=row.get("collateral") or "USDC")
 
 
 class Engine:
@@ -182,19 +182,33 @@ class Engine:
         s, lv, inst = c.setup, c.levels, c.inst
         data = {"coin": inst.coin, "ticker": inst.ticker, "chart": inst.chart, "dex": inst.dex,
                 "sz_decimals": inst.sz_decimals, "max_leverage": inst.max_leverage,
-                "only_isolated": int(inst.only_isolated), "side": s.direction, "setup": s.name, "family": s.family,
+                "only_isolated": int(inst.only_isolated), "collateral": inst.collateral, "side": s.direction, "setup": s.name, "family": s.family,
                 "tf": s.tf, "grade": c.grade, "inside": int(s.inside), "rvol": s.rvol,
                 "with_continuity": int(bool(s.with_continuity)), "entry": lv.entry, "stop": lv.stop,
                 "target": lv.target, "hard_stop": lv.hard_stop, "rr": lv.rr, "target_kind": lv.target_kind,
                 "entry_type": c.entry_type, "source": c.source, "summary": c.summary(), "thesis": c.thesis}
         expires = bar_close(s.tf, now)
-        status = "waiting_approval" if self.broker.live else "armed"
+        ask = self.broker.live and settings.live_approval != "auto"
+        status = "waiting_approval" if ask else "armed"
         pid = self.j.insert("plans", {"mode": self.mode, "coin": inst.coin, "side": s.direction,
                                       "data": json.dumps(data), "status": status, "created_at": now_iso(),
                                       "expires_at": expires.isoformat(), "updated_at": now_iso()})
-        if self.broker.live:
+        if ask:
             self.ask_approval(pid, data, expires)
+        elif self.broker.live:
+            self.announce(pid, data, expires)
         return pid
+
+    def announce(self, pid: int, data: dict[str, Any], expires: datetime) -> None:
+        """Auto mode: no approval needed, but every live plan is still on the record in #trades."""
+        if self.hub is None:
+            return
+        try:
+            self.hub.brain = "local"
+            self.hub.post_finding("trades", f"[plan {pid}] LIVE (auto) {data['summary']} Armed until "
+                                            f"{expires.strftime('%a %H:%M')} New York.", "reported", 1.0)
+        except Exception as e:  # noqa: BLE001
+            log.info("hub: couldn't post plan %s (%s)", pid, type(e).__name__)
 
     def ask_approval(self, pid: int, data: dict[str, Any], expires: datetime) -> None:
         """Real money: the boss approves every trade (CONNECTING_AN_AGENT.md, Trader's notes)."""
@@ -296,7 +310,7 @@ class Engine:
         inst = inst_from(d)
         long_ = d["side"] == "long"
         try:
-            equity = self.broker.equity()
+            equity = self.broker.equity(inst)
             size = risk.size_for(equity, px, d["stop"], inst.sz_decimals, inst.max_leverage)
         except Exception as e:  # noqa: BLE001
             self.incident(self.clock().date(), f"couldn't size {d['coin']} ({type(e).__name__})")

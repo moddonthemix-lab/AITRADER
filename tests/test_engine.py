@@ -184,3 +184,15 @@ def test_report_is_honest_when_trader_never_scanned(journal, wednesday):
     e, _ = paper(journal, {"xyz:NVDA": 108.5}, wednesday)
     text = e.report_text(wednesday.date())[0]
     assert "I didn't scan during today's window" in text and "because" not in text
+
+
+def test_auto_approval_arms_live_plans_and_records_them(journal, wednesday, monkeypatch):
+    from trader.config import settings
+
+    monkeypatch.setattr(settings, "live_approval", "auto")
+    hub = FakeHub()
+    e = Engine(journal, FakeLiveBroker({"xyz:NVDA": 108.5}), hub=hub, brain=FakeBrain(), instruments=lambda: [inst()],
+               chart_source=source_for(DAILY_INSIDE), perp_source=failing_source, clock=lambda: wednesday)
+    e.scan(wednesday)
+    assert journal.one("SELECT status FROM plans")["status"] == "armed"
+    assert not hub.tasks_requested and "LIVE (auto)" in hub.findings[0]["claim"]

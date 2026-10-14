@@ -4,7 +4,9 @@ Stocks on Hyperliquid are perpetuals on builder-deployed ("HIP-3") markets, name
     xyz:NVDA, xyz:TSLA, xyz:SP500 (trade.xyz)      mkts:US500, mkts:USTECH (Markets by Kinetiq)
     km:…, cash:…, flx:…                              (other HIP-3 markets)
 The same stock can be listed on several of them; Trader trades it where it's most liquid, and skips
-markets with too little volume (TRADER_MIN_DAY_VOLUME_USD).
+markets with too little volume (TRADER_MIN_DAY_VOLUME_USD) — and markets whose collateral he doesn't hold:
+each stock market is margined in one stablecoin (xyz and mkts: USDC; km and flx: USDH; cash: USDT0), so a
+USDC account can only trade xyz and mkts (TRADER_COLLATERAL).
 
 Brokers:
     PaperBroker  pretend money, real Hyperliquid prices, fees included (the default)
@@ -58,6 +60,7 @@ class Instrument:
     only_isolated: bool
     day_volume: float    # dollars traded in the last 24h
     mark: float
+    collateral: str = "USDC"  # the stablecoin this market is margined in
 
     @property
     def kind(self) -> str:
@@ -68,14 +71,29 @@ def _ticker(coin: str) -> str:
     return coin.split(":", 1)[1] if ":" in coin else coin
 
 
+_tokens: dict[int, str] = {}
+
+
+def token_name(index: int) -> str:
+    """Spot token index → name (0 = USDC, 268 = USDT0, 360 = USDH …)."""
+    if index not in _tokens:
+        try:
+            for t in (_info({"type": "spotMeta"}) or {}).get("tokens", []):
+                _tokens[int(t["index"])] = t["name"]
+        except (DataFeedError, KeyError, TypeError, ValueError):
+            pass
+    return _tokens.get(index, "USDC" if index == 0 else f"token{index}")
+
+
 def markets(dexes: list[str] | None = None) -> list[Instrument]:
-    """Every perp on the chosen HIP-3 markets, with its 24h volume and mark price."""
+    """Every perp on the chosen HIP-3 markets, with its 24h volume, mark price and collateral."""
     out: list[Instrument] = []
     for dex in dexes or settings.dexes:
         try:
             meta, ctxs = _info({"type": "metaAndAssetCtxs", "dex": dex})
         except (DataFeedError, ValueError, TypeError):
             continue  # a market that's down or gone: the others still count
+        collateral = token_name(int(meta.get("collateralToken") or 0))
         for u, c in zip(meta.get("universe", []), ctxs):
             if u.get("isDelisted"):
                 continue
@@ -83,7 +101,8 @@ def markets(dexes: list[str] | None = None) -> list[Instrument]:
             out.append(Instrument(
                 coin=u["name"], dex=dex, ticker=t, chart=CHART.get(t, t), sz_decimals=int(u.get("szDecimals", 2)),
                 max_leverage=int(u.get("maxLeverage", 1)), only_isolated=bool(u.get("onlyIsolated")),
-                day_volume=float(c.get("dayNtlVlm") or 0), mark=float(c.get("markPx") or c.get("midPx") or 0)))
+                day_volume=float(c.get("dayNtlVlm") or 0), mark=float(c.get("markPx") or c.get("midPx") or 0),
+                collateral=collateral))
     return out
 
 
@@ -98,6 +117,8 @@ def universe(watchlist: list[str] | None = None, instruments: list[Instrument] |
     for m in allm:
         if m.day_volume < settings.min_day_volume_usd or m.mark <= 0:
             continue
+        if m.collateral not in settings.collateral:
+            continue  # margined in a stablecoin Trader doesn't hold: every order would be refused
         if m.coin.lower() in exact:
             best[m.coin] = m
             continue
@@ -181,7 +202,8 @@ class Fill:
 class Broker:
     live = False
 
-    def equity(self) -> float:
+    def equity(self, inst: Instrument | None = None) -> float:
+        """The money available to size a trade (for `inst`'s market, when given)."""
         raise NotImplementedError
 
     def mid(self, coin: str) -> float:
@@ -220,7 +242,7 @@ class PaperBroker(Broker):
     def mid(self, coin: str) -> float:
         return self._price(coin)
 
-    def equity(self) -> float:
+    def equity(self, inst: Instrument | None = None) -> float:
         return round(settings.paper_equity + self.journal.realized_pnl(mode="paper"), 2)
 
     def _fill(self, inst: Instrument, buy: bool, size: float) -> Fill:
@@ -256,15 +278,36 @@ class LiveBroker(Broker):
         self.account = settings.hl_account
         self._leverage_set: set[str] = set()
 
-    def equity(self) -> float:
-        total = 0.0
-        for dex in [""] + [d for d in settings.dexes if d]:
-            try:
-                st = self.info.user_state(self.account, dex)
-                total += float(st["marginSummary"]["accountValue"])
-            except Exception:  # noqa: BLE001 — a market this account never used
-                continue
-        return round(total, 2)
+    slippage = 0.01  # market orders: an IOC limit at most 1% through the mid
+
+    # ---- the account
+    def abstraction(self) -> str:
+        """"unifiedAccount" / "portfolioMargin" (one balance backs every market) or "default"/"disabled"
+        (standard: each market has its own balance)."""
+        try:
+            return str(_info({"type": "userAbstraction", "user": self.account}) or "default")
+        except DataFeedError:
+            return "default"
+
+    def balances(self) -> dict[str, float]:
+        """Spot balances by token (in unified mode this is where all the money shows)."""
+        st = _info({"type": "spotClearinghouseState", "user": self.account}) or {}
+        return {b["coin"]: float(b.get("total") or 0) for b in st.get("balances", [])}
+
+    def dex_value(self, dex: str) -> float:
+        try:
+            return float(self.info.user_state(self.account, dex)["marginSummary"]["accountValue"])
+        except Exception:  # noqa: BLE001 — a market this account never used
+            return 0.0
+
+    def equity(self, inst: Instrument | None = None) -> float:
+        if self.abstraction() in ("unifiedAccount", "portfolioMargin"):
+            bal = self.balances()
+            coins = [inst.collateral] if inst else settings.collateral
+            return round(sum(bal.get(c, 0.0) for c in coins), 2)
+        if inst is not None:  # standard mode: only that market's own balance can margin the trade
+            return round(self.dex_value(inst.dex), 2)
+        return round(sum(self.dex_value(d) for d in [""] + [d for d in settings.dexes if d]), 2)
 
     def position_size(self, inst: Instrument) -> float | None:
         st = self.info.user_state(self.account, inst.dex)
@@ -274,6 +317,7 @@ class LiveBroker(Broker):
                 return abs(float(pos.get("szi") or 0))
         return 0.0
 
+    # ---- orders
     def _check(self, r: Any) -> dict:
         if not isinstance(r, dict) or r.get("status") != "ok":
             raise RuntimeError(f"Hyperliquid refused the order: {str(r)[:200]}")
@@ -283,6 +327,11 @@ class LiveBroker(Broker):
             raise RuntimeError(f"Hyperliquid refused the order: {st['error'][:200]}")
         return st
 
+    @staticmethod
+    def _check_ok(r: Any) -> None:
+        if not isinstance(r, dict) or r.get("status") != "ok":
+            raise RuntimeError(f"Hyperliquid refused: {str(r)[:200]}")
+
     def _leverage(self, inst: Instrument) -> None:
         if inst.coin in self._leverage_set:
             return
@@ -290,27 +339,29 @@ class LiveBroker(Broker):
         self._check_ok(self.ex.update_leverage(lev, inst.coin, is_cross=False))  # isolated: a loss stays in its trade
         self._leverage_set.add(inst.coin)
 
-    @staticmethod
-    def _check_ok(r: Any) -> None:
-        if not isinstance(r, dict) or r.get("status") != "ok":
-            raise RuntimeError(f"Hyperliquid refused: {str(r)[:200]}")
-
-    def open(self, inst: Instrument, is_long: bool, size: float) -> Fill:
-        self._leverage(inst)
-        st = self._check(self.ex.market_open(inst.coin, is_long, size, None, 0.01))
+    def _market(self, inst: Instrument, is_buy: bool, size: float, reduce_only: bool) -> Fill:
+        """A market order as an immediate-or-cancel limit, priced by the PERP rules. (The SDK's own market_open
+        treats stock-market asset ids (110000+) as spot and rounds cheap stocks' prices wrongly.)"""
+        px = self.mid(inst.coin)
+        limit = round_px(px * (1 + self.slippage if is_buy else 1 - self.slippage), inst.sz_decimals)
+        size = round_size(size, inst.sz_decimals)
+        st = self._check(self.ex.order(inst.coin, is_buy, size, limit, {"limit": {"tif": "Ioc"}},
+                                       reduce_only=reduce_only))
         f = st.get("filled") or {}
         if not f:
             raise RuntimeError("the order didn't fill (price moved away)")
-        px, sz = float(f["avgPx"]), float(f["totalSz"])
-        return Fill(px, sz, round(px * sz * settings.fee_pct / 100, 4), str(f.get("oid")))
+        fpx, sz = float(f["avgPx"]), float(f["totalSz"])
+        return Fill(fpx, sz, round(fpx * sz * settings.fee_pct / 100, 4), str(f.get("oid")))
+
+    def open(self, inst: Instrument, is_long: bool, size: float) -> Fill:
+        self._leverage(inst)
+        return self._market(inst, is_long, size, reduce_only=False)
 
     def close(self, inst: Instrument, is_long: bool, size: float) -> Fill:
-        st = self._check(self.ex.market_close(inst.coin, size, None, 0.01))
-        f = st.get("filled") or {}
-        if not f:
-            raise RuntimeError("the close didn't fill")
-        px, sz = float(f["avgPx"]), float(f["totalSz"])
-        return Fill(px, sz, round(px * sz * settings.fee_pct / 100, 4), str(f.get("oid")))
+        held = self.position_size(inst)
+        if held is not None:
+            size = min(size, held) if held > 0 else size
+        return self._market(inst, not is_long, size, reduce_only=True)
 
     def _trigger(self, inst: Instrument, is_long: bool, size: float, px: float, kind: str) -> str:
         px = round_px(px, inst.sz_decimals)
@@ -343,3 +394,60 @@ class LiveBroker(Broker):
                     self.ex.cancel(inst.coin, int(oid))
                 except Exception:  # noqa: BLE001
                     pass
+
+    # ---- setup and checks
+    def set_unified_account(self) -> Any:
+        """One USDC balance backs the regular and the stock markets (Hyperliquid's "unified account").
+        An API wallet may switch this on; it moves no money and can't withdraw."""
+        r = self.ex.agent_set_abstraction("u")
+        self._check_ok(r)
+        return r
+
+    def readiness(self, inst: Instrument) -> list[tuple[bool | None, str]]:
+        """Everything a real order on `inst` needs, checked against the real account. Places nothing."""
+        out: list[tuple[bool | None, str]] = []
+        mode = self.abstraction()
+        unified = mode in ("unifiedAccount", "portfolioMargin")
+        out.append((True if unified else None, f"Account mode: {mode}" + ("" if unified else
+                    " — each market has its own balance; run `trader wallet unified-account` so one USDC balance "
+                    "backs the stock markets (or move USDC to the stock market in the app)")))
+        eq = self.equity(inst)
+        out.append((eq >= 20, f"Money usable on {inst.coin} ({inst.collateral}): ${eq:,.2f}"))
+        try:
+            asset = self.ex.info.name_to_asset(inst.coin)
+            out.append((True, f"{inst.coin} is Hyperliquid asset {asset}; max {inst.max_leverage}x"
+                              f"{', isolated only' if inst.only_isolated else ''}"))
+        except Exception as e:  # noqa: BLE001
+            out.append((False, f"{inst.coin} isn't a tradeable market for this account ({type(e).__name__})"))
+        px = self.mid(inst.coin)
+        size = min_size(px, inst.sz_decimals)
+        out.append((True, f"Smallest order: {size:g} at ~{px:g} = ${size * px:,.2f} "
+                          f"(buy limit {round_px(px * 1.01, inst.sz_decimals):g})"))
+        return out
+
+    def round_trip(self, inst: Instrument) -> list[str]:
+        """A REAL test: buy the smallest allowed amount, put a stop on the exchange, cancel it, sell.
+        Costs about the fees and the spread (a few cents)."""
+        steps = []
+        size = min_size(self.mid(inst.coin), inst.sz_decimals)
+        f = self.open(inst, True, size)
+        steps.append(f"bought {f.size:g} {inst.coin} at {f.price:g}")
+        try:
+            ids = self.protect(inst, True, f.size, f.price * 0.95, None)
+            steps.append(f"stop order placed on the exchange at {round_px(f.price * 0.95, inst.sz_decimals):g} "
+                         f"(id {ids.get('sl')})")
+            self.cancel_protection(inst, ids)
+            steps.append("stop order cancelled")
+        finally:
+            c = self.close(inst, True, f.size)
+            steps.append(f"sold {c.size:g} at {c.price:g}: {(c.price - f.price) * c.size - f.fee - c.fee:+.4f} USD "
+                         "after fees")
+        left = self.position_size(inst)
+        steps.append("position fully closed" if not left else f"WARNING: {left:g} still open — close it in the app")
+        return steps
+
+
+def min_size(px: float, sz_decimals: int, usd: float = 11.0) -> float:
+    """The smallest size worth at least `usd` (Hyperliquid's minimum is $10), rounded UP to the size step."""
+    step = 10 ** -sz_decimals
+    return round(math.ceil(usd / px / step) * step, sz_decimals)

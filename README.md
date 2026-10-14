@@ -92,7 +92,9 @@ dashboard only answers this Mac. Trades can't be placed from the dashboard, only
    always reads [`docs/strat/`](docs/strat/) too: the playbook (forked from AMO's Strat rules) and your rules.
 
 **Real money later:** [docs/HYPERLIQUID_SETUP.md](docs/HYPERLIQUID_SETUP.md) gives Trader his own API
-wallet. It can trade, never withdraw, and you can change it any time. Then set `TRADER_MODE=live`.
+wallet. It can trade, never withdraw, and you can change it any time. Fund it with USDC, run
+`trader wallet unified-account`, then prove it with `trader live-check --test-order`: one real ~$11
+round trip. Then set `TRADER_MODE=live`.
 
 ## Everyday commands
 
@@ -107,6 +109,7 @@ trader lessons             # his lessons from closed trades
 trader report              # today's report (add --post to send it to the hub)
 trader close 12            # close position #12 by hand
 trader wallet status       # his wallet and its approval
+trader live-check          # is real trading ready? (--test-order: one real ~$11 round trip)
 ```
 
 In the hub you can also give him tasks: "backtest TSLA and AMD", "scan", "how does NVDA look?", "stats".
@@ -121,7 +124,8 @@ can lose, and the full Strat read.
   takes profit at the target and trails once in profit. The task shows each step.
 - 👎, or no answer in time → no trade.
 
-Nothing else can arm a live trade, including messages from you or the other agents.
+Nothing else can arm a live trade, including messages from you or the other agents. (If you'd rather he
+trade hands-off, `TRADER_LIVE_APPROVAL=auto` arms his plans himself. He still posts each one in `#trades`.)
 
 ## The rules, in one place
 

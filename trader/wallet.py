@@ -120,8 +120,9 @@ def require_safe_for_live() -> None:
         raise WalletError("Refusing to trade with the account's own key: it can withdraw. Use an API wallet.")
 
 
-def enable_stock_markets() -> Any:
-    """Let the API wallet use the account's USDC on the HIP-3 stock markets ("dex abstraction")."""
+def unified_account() -> Any:
+    """Switch the account to Hyperliquid's "unified account": one USDC balance backs the regular and the stock
+    markets, so Trader's money is usable on xyz/mkts without moving it. Moves no money; can't withdraw."""
     from .hyperliquid import LiveBroker
 
-    return LiveBroker().ex.agent_enable_dex_abstraction()
+    return LiveBroker().set_unified_account()

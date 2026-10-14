@@ -41,19 +41,30 @@ key that could withdraw.
 4. **Approve it in Hyperliquid:** app.hyperliquid.xyz → **More → API**. Name it `Trader`, paste the
    address from step 3, choose Trader's account (the sub-account, if you made one), and **Authorize**.
    Hyperliquid lets you pick how long the approval lasts (up to 180 days).
-5. **Let it use the stock markets.** The stock markets keep their margin separately from the main
-   account. In the app, move USDC to the stock market Trader uses (e.g. trade.xyz), or run once:
+5. **Fund it with USDC.** The stocks Trader trades (trade.xyz `xyz:` and Kinetiq `mkts:`) are margined
+   in **USDC**. (Other stock markets use other coins: `km:`/`flx:` USDH, `cash:` USDT0. Trader skips
+   those unless you set `TRADER_COLLATERAL`.)
+6. **Let one USDC balance back the stock markets** (Hyperliquid's "unified account"). Run once:
    ```bash
-   trader wallet enable-stock-markets
+   trader wallet unified-account
    ```
-6. **Check:**
+   This moves no money and gives no withdrawal rights. Or switch the account mode in the app, or move
+   USDC into the trade.xyz market there; either works.
+7. **Prove it works on your real account:**
    ```bash
-   trader wallet status
-   trader doctor
+   trader live-check
    ```
-   `approved: true` and no problems = ready.
-7. **Go live** only when you decide: in `.env` set `TRADER_MODE=live`, then restart Trader.
-   Every live trade still waits for your 👍 in `#trades`.
+   It checks the wallet approval, the account mode, the money usable on the stock market, the market id
+   and the smallest order. Places nothing. Then one **real** tiny test (about $11: buy, put a stop on the
+   exchange, cancel it, sell; costs a few cents in fees and spread):
+   ```bash
+   trader live-check --test-order
+   ```
+   "Ready to trade for real" = everything works end to end.
+8. **Go live** only when you decide: in `.env` set `TRADER_MODE=live`, then restart Trader.
+   By default every live trade waits for your 👍 in `#trades` (`TRADER_LIVE_APPROVAL=each`). If you later
+   want him fully hands-off, set `TRADER_LIVE_APPROVAL=auto`. He then trades on his own and still posts
+   every plan in `#trades`.
 
 ## Changing Trader's wallet (do it periodically)
 

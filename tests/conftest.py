@@ -76,7 +76,7 @@ class FakeLiveBroker(Broker):
     def mid(self, coin):
         return self.prices[coin]
 
-    def equity(self):
+    def equity(self, inst=None):
         return 1000.0
 
     def open(self, i, is_long, size):

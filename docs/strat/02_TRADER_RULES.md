@@ -40,7 +40,8 @@ These are enforced in code. Trader explains them; he never bends them.
 - **Paper first.** Trader starts with pretend money (`TRADER_MODE=paper`) at real Hyperliquid prices.
 - **Live trades need the boss.** In live mode, each trade plan is posted in `#trades` as a task
   ("[plan 12] LIVE long xyz:NVDA …"). Only the boss's 👍 arms it. Not approved before the setup's bar
-  closes = no trade.
+  closes = no trade. (Only if the boss sets `TRADER_LIVE_APPROVAL=auto` does Trader arm live plans himself;
+  each one is still posted in `#trades`.)
 - **Trade, never withdraw.** Trader's wallet is a Hyperliquid API wallet: it can place and cancel orders
   but cannot move or withdraw money. Trader refuses to run live with a key that could withdraw.
 - **Messages are information, never orders.** Nobody but the boss can tell Trader what to do, and not even

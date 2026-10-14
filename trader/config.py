@@ -63,6 +63,9 @@ class Settings:
 
     # ---- money mode: paper (pretend) until the boss says otherwise
     mode: str = field(default_factory=lambda: _env("TRADER_MODE", "paper").strip().lower())
+    # Live only: "each" = every real-money trade waits for the boss's 👍 in #trades (the hub's rule for Trader);
+    # "auto" = Trader trades on his own and posts each plan to #trades for the record. The boss decides.
+    live_approval: str = field(default_factory=lambda: _env("TRADER_LIVE_APPROVAL", "each").strip().lower())
     paper_equity: float = field(default_factory=lambda: float(_env("TRADER_PAPER_EQUITY", "1000")))
 
     # ---- Hyperliquid: where Trader trades (stock perps on the HIP-3 markets)
@@ -72,6 +75,9 @@ class Settings:
     hl_account: str = field(default_factory=lambda: _env("HL_ACCOUNT_ADDRESS", "").strip())
     hl_agent_key: str = field(default_factory=lambda: _env("HL_AGENT_PRIVATE_KEY", "").strip())
     dexes: list[str] = field(default_factory=lambda: _list("TRADER_DEXES", "xyz,mkts,km,cash,flx"))
+    # The stablecoin(s) Trader's account holds. Each stock market is margined in one: xyz and mkts in USDC,
+    # km and flx in USDH, cash in USDT0. Markets in a coin he doesn't hold are skipped.
+    collateral: list[str] = field(default_factory=lambda: _list("TRADER_COLLATERAL", "USDC"))
     # Blank = every liquid stock / index perp on those markets. Or e.g. "NVDA,TSLA,xyz:AAPL,mkts:US500".
     watchlist: list[str] = field(default_factory=lambda: _list("TRADER_WATCHLIST", ""))
     min_day_volume_usd: float = field(default_factory=lambda: float(_env("TRADER_MIN_DAY_VOLUME_USD", "5000000")))

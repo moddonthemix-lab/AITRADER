@@ -9,7 +9,8 @@
     trader backtest NVDA TSLA     replay history with Trader's rules (--weekly, --from 2023-01-01)
     trader positions | stats | report [--post] | lessons
     trader close <trade id>       close a position by hand
-    trader wallet new | status | enable-stock-markets
+    trader wallet new | status | unified-account
+    trader live-check [NVDA] [--test-order]   prove real trading works on your account
     trader docs [search words]    the Strat documents Trader reads
 """
 
@@ -319,11 +320,64 @@ def cmd_wallet(a: argparse.Namespace) -> int:
               "  (If Trader trades a sub-account, pick that sub-account there.)\n"
               "This wallet can trade but can never withdraw. Then run: trader wallet status")
         return 0
-    if a.action == "enable-stock-markets":
-        _print(wallet.enable_stock_markets())
+    if a.action == "unified-account":
+        _print(wallet.unified_account())
+        print("Done: one USDC balance now backs the stock markets. Check with: trader live-check")
         return 0
     _print(wallet.status())
     return 0
+
+
+def cmd_live_check(a: argparse.Namespace) -> int:
+    """Everything a real order needs, checked against the real account — and, with --test-order, one real
+    tiny round trip (buy ~$11, stop placed and cancelled on the exchange, sell)."""
+    from . import hyperliquid as hl
+    from . import wallet
+
+    ok = True
+
+    def line(good: bool | None, what: str) -> None:
+        nonlocal ok
+        ok = ok and good is not False
+        print(("✅ " if good else "⚠️  " if good is None else "❌ ") + what)
+
+    st = wallet.status()
+    line(not st["problems"] and bool(st["agent"]), f"Wallet: API wallet {st['agent']} for {st['account']}"
+         + (f", approved until {st['valid_until']}" if st["valid_until"] else ""))
+    for p in st["problems"]:
+        line(False, p)
+    if not st["agent"] or not st["account"]:
+        return 1
+    try:
+        b = hl.LiveBroker()
+    except Exception as e:  # noqa: BLE001
+        line(False, str(e))
+        return 1
+    want = a.ticker.upper()
+    inst = next((m for m in hl.markets() if m.coin.lower() == a.ticker.lower() or
+                 (m.ticker == want and m.collateral in settings.collateral)), None)
+    if inst is None:
+        line(False, f"No {a.ticker} market margined in {'/'.join(settings.collateral)} on {', '.join(settings.dexes)}")
+        return 1
+    for good, what in b.readiness(inst):
+        line(good, what)
+    if a.test_order:
+        if not ok:
+            print("\nNot sending a test order until the ❌ items are fixed.")
+            return 1
+        print(f"\nREAL test on {inst.coin}: buy the smallest amount (~$11), place and cancel a stop, sell.")
+        if not a.yes and input("Type YES to send real orders: ").strip() != "YES":
+            print("Cancelled.")
+            return 1
+        try:
+            for step in b.round_trip(inst):
+                line(True, step)
+        except Exception as e:  # noqa: BLE001
+            line(False, f"The test order failed: {e}")
+    print("\nReady to trade for real." if ok and a.test_order else
+          "\nAll checks pass. Prove it end to end with: trader live-check --test-order" if ok else
+          "\nFix the ❌ items above.")
+    return 0 if ok else 1
 
 
 def cmd_docs(a: argparse.Namespace) -> int:
@@ -360,9 +414,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("trade_id", type=int)
     s.set_defaults(fn=cmd_close)
     s = sub.add_parser("wallet")
-    s.add_argument("action", nargs="?", default="status", choices=["new", "status", "enable-stock-markets"])
+    s.add_argument("action", nargs="?", default="status", choices=["new", "status", "unified-account"])
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_wallet)
+    s = sub.add_parser("live-check")
+    s.add_argument("ticker", nargs="?", default="NVDA")
+    s.add_argument("--test-order", action="store_true", help="send one REAL tiny round-trip order (~$11)")
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(fn=cmd_live_check)
     s = sub.add_parser("docs")
     s.add_argument("words", nargs="*")
     s.set_defaults(fn=cmd_docs)
