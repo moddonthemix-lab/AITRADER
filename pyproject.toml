@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trader"
+version = "0.1.0"
+description = "Trader: the AI family's money maker — The Strat, rule-based, on Hyperliquid's stock markets"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []  # the core is standard library only
+
+[project.optional-dependencies]
+# Real-money trading and Trader's wallet (Hyperliquid's official SDK)
+live = ["hyperliquid-python-sdk>=0.24,<1"]
+# Cloud AI through the Family Hub's shared brain (trader/family): Claude, within the hub's budget
+cloud = ["anthropic>=1.13"]
+# Reading PDFs in the Strat documents folder
+docs = ["pypdf>=4"]
+all = ["hyperliquid-python-sdk>=0.24,<1", "anthropic>=1.13", "pypdf>=4"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+trader = "trader.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["trader*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
