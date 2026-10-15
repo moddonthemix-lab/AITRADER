@@ -82,6 +82,24 @@ def week_start(d: date | None = None) -> date:
     return d - timedelta(days=d.weekday())
 
 
+def money(t: dict[str, Any]) -> dict[str, Any]:
+    """The money view of a trade: notional (position value), margin tied up (value ÷ leverage), and the
+    result as a % of each. Price % is the move in the trade's favour, before fees."""
+    d = 1 if t["side"] == "long" else -1
+    notional = t["entry"] * t["size"]
+    lev = t.get("leverage") or 1
+    margin = notional / lev
+    out = {"notional": round(notional, 2), "margin": round(margin, 2)}
+    if t.get("pnl") is not None:
+        out["pnl_pct_notional"] = round(t["pnl"] / notional * 100, 2)
+        out["pnl_pct_margin"] = round(t["pnl"] / margin * 100, 1)
+    if t.get("exit") is not None:
+        out["move_pct"] = round((t["exit"] - t["entry"]) * d / t["entry"] * 100, 2)
+    if t.get("peak") is not None:
+        out["peak_pct"] = round((t["peak"] - t["entry"]) * d / t["entry"] * 100, 2)
+    return out
+
+
 class Journal:
     def __init__(self, path: str = ":memory:"):
         if path != ":memory:":

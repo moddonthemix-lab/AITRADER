@@ -235,7 +235,11 @@ function render(s) {
   $("lessons").replaceChildren(...(s.lessons.length ? s.lessons.map(x => el("li", {}, x)) : [el("li", { className: "muted" }, "Lessons appear after closed trades.")]));
   $("trades").replaceChildren(table([["#", t => t.id], ["", t => t.side], ["Market", t => t.coin], ["Setup", t => `${t.tf} ${t.setup}${t.inside ? " · inside" : ""}`],
     ["Grade", t => t.grade], ["Entry", t => num(t.entry)], ["Exit", t => t.exit == null ? "open" : num(t.exit)], ["Why out", t => t.exit_reason ?? ""],
-    ["P&L", t => t.pnl == null ? "" : signed(t.pnl)], ["R", t => t.r_multiple ?? ""], ["Opened", t => fmtTime(t.opened_at)]], s.trades));
+    ["Margin", t => num(t.margin)], ["Position", t => num(t.notional)], ["Move %", t => t.move_pct == null ? "" : signed(t.move_pct) + "%"],
+    ["Peak %", t => t.peak_pct == null ? "" : signed(t.peak_pct) + "%"],
+    ["P&L", t => t.pnl == null ? "" : signed(t.pnl)], ["P&L % of margin", t => t.pnl_pct_margin == null ? "" : signed(t.pnl_pct_margin) + "%"],
+    ["P&L % of position", t => t.pnl_pct_notional == null ? "" : signed(t.pnl_pct_notional) + "%"],
+    ["R", t => t.r_multiple ?? ""], ["Opened", t => fmtTime(t.opened_at)]], s.trades));
   const today = [];
   s.passes.forEach(p => today.push(el("li", {}, el("span", { className: "chip" }, "pass · " + p.reason.replaceAll("_", " ")), p.detail)));
   s.incidents.forEach(i => today.push(el("li", {}, el("span", { className: "chip" }, "incident (not a pass)"), i.what)));

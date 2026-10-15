@@ -28,7 +28,7 @@ from typing import Any
 
 from . import backtest, learning, prep, strat, strategy
 from .config import settings
-from .journal import NY, ny_today, week_start
+from .journal import NY, money, ny_today, week_start
 from .knowledge import BUILTIN, DOC_EXT, MAX_FILE_BYTES, library
 
 log = logging.getLogger(__name__)
@@ -85,8 +85,11 @@ class Dashboard:
         for p in j.all("SELECT * FROM plans WHERE status IN ('waiting_approval','armed') ORDER BY id"):
             d = json.loads(p["data"])
             plans.append({"id": p["id"], "status": p["status"], "summary": d["summary"], "expires_at": p["expires_at"]})
-        trades = j.all("SELECT id, coin, side, setup, tf, grade, inside, entry, exit, exit_reason, pnl, r_multiple, "
-                       "fees, opened_at, closed_at FROM trades WHERE mode = ? ORDER BY id DESC LIMIT 30", (mode,))
+        trades = j.all("SELECT id, coin, side, setup, tf, grade, inside, entry, size, leverage, exit, exit_reason, "
+                       "pnl, r_multiple, peak, fees, opened_at, closed_at FROM trades WHERE mode = ? "
+                       "ORDER BY id DESC LIMIT 30", (mode,))
+        for t in trades:
+            t.update(money(t))
         today_pnl = round(sum(t["pnl"] or 0 for t in j.closed_on(today) if t["mode"] == mode), 2)
         return {
             "mode": mode, "equity": equity, "today_pnl": today_pnl, "total_pnl": j.realized_pnl(mode),
