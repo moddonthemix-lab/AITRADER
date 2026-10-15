@@ -115,16 +115,14 @@ class Settings:
     fee_pct: float = field(default_factory=lambda: float(_env("TRADER_FEE_PCT", "0.09")))
     # Trailing stop: once the trade is this far in profit (after fees), the stop moves to lock in a profit,
     # then follows the best price at this distance — never back down below the locked profit.
-    trail_activate_pct: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_ACTIVATE_PCT", "1.0")))
-    trail_lock_pct: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_LOCK_PCT", "0.25")))
-    trail_pct: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_PCT", "1.5")))
-    # "r" (default): the trail is measured in the setup's own risk (R = entry-to-stop distance), so a wide
-    # weekly setup gets room and a tight inside bar is trailed tightly. "pct": the fixed percentages above.
-    # Defaults from a backtest of 12 big stocks since 2018: switch on at +1.5R, follow 1R behind the best
-    # price — so the moment it switches on, the stop already locks in +0.5R.
-    trail_mode: str = field(default_factory=lambda: _env("TRADER_TRAIL_MODE", "r").strip().lower())
-    trail_activate_r: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_ACTIVATE_R", "1.5")))
+    # Trailing stop, on as soon as the trade is in profit after fees: when price is TRADER_TRAIL_START_PCT
+    # beyond the round-trip fees, the stop jumps to lock in fees + TRADER_TRAIL_LOCK_PCT (a guaranteed green
+    # close), then follows the best price TRADER_TRAIL_R (1R = the setup's entry-to-stop distance) behind.
+    trail_start_pct: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_START_PCT", "0.15")))
+    trail_lock_pct: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_LOCK_PCT", "0.05")))
     trail_r: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_R", "1.0")))
+    # Optional: wait until the trade is this many R in profit before trailing (0 = as soon as it's in profit).
+    trail_activate_r: float = field(default_factory=lambda: float(_env("TRADER_TRAIL_ACTIVATE_R", "0")))
     # Don't chase: a setup that already triggered is only taken while price is this close to the trigger
     # (as a fraction of the planned risk).
     max_chase_r: float = field(default_factory=lambda: float(_env("TRADER_MAX_CHASE_R", "0.25")))
@@ -134,9 +132,9 @@ class Settings:
     scan_start: str = field(default_factory=lambda: _env("TRADER_SCAN_START", "09:30"))
     window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:40"))
     window_end: str = field(default_factory=lambda: _env("TRADER_WINDOW_END", "15:45"))
-    # Entry: the Strat trigger (break of the setup bar), confirmed by a 5-minute candle CLOSING beyond it.
-    # "touch" = enter on the first print through the trigger.
-    entry_confirm: str = field(default_factory=lambda: _env("TRADER_ENTRY_CONFIRM", "5m").strip().lower())
+    # Entry: "break" = the moment price trades through the setup bar's high/low, wicks included
+    # (thestrat.ai: "the break is the confirmation"). "5m" = wait for a 5-minute candle to close beyond it.
+    entry_confirm: str = field(default_factory=lambda: _env("TRADER_ENTRY_CONFIRM", "break").strip().lower())
     # Before arming a plan, check it against the boss's Strat documents (when there are any): a setup the
     # documents rule out is skipped, with the document's reason.
     doc_check: bool = field(default_factory=lambda: _flag("TRADER_DOC_CHECK", "1"))

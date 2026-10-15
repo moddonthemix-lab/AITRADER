@@ -159,6 +159,30 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def first_start(engine: Any) -> None:
+    """In the background, once: save the Strat docs (word for word) and seed his learning with backtests."""
+    from pathlib import Path
+
+    from . import backtest, knowledge
+    from . import hyperliquid as hl
+
+    folder = Path(settings.strat_docs_dir).expanduser()
+    if not (folder / "thestrat.ai").is_dir():
+        try:
+            r = knowledge.save_thestrat(folder)
+            logging.info("saved %s Strat docs pages into %s", r["saved"], folder)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("couldn't save the Strat docs yet (%s) — try: trader docs add-thestrat", type(e).__name__)
+    if not engine.j.scalar("SELECT 1 FROM setup_stats LIMIT 1"):
+        try:
+            charts = list(dict.fromkeys(m.chart for m in hl.universe() if m.kind != "other"))[:8]
+            for chart in charts:
+                backtest.learn(engine.j, backtest.run(chart, "D"))
+            logging.info("learning seeded with backtests on %s", ", ".join(charts))
+        except Exception as e:  # noqa: BLE001
+            logging.warning("couldn't seed learning with backtests (%s)", type(e).__name__)
+
+
 def cmd_run(_: argparse.Namespace) -> int:
     from .connector import Connector
 
@@ -173,6 +197,7 @@ def cmd_run(_: argparse.Namespace) -> int:
         logging.info("connected to the Family Hub")
     else:
         logging.info("no hub connection (HUB_TOKEN not set) — trading %s only, reports stay local", engine.mode)
+    threading.Thread(target=first_start, args=(engine,), name="trader-first-start", daemon=True).start()
     if settings.dash_enabled:
         from .dashboard import serve
 
@@ -238,9 +263,11 @@ def cmd_scan(_: argparse.Namespace) -> int:
 
 def cmd_read(a: argparse.Namespace) -> int:
     from . import strat
+    from .journal import NY
+    from .session import session_source
 
     for t in a.tickers:
-        print(strat.thesis(strat.analyze(_chart(t))), "\n")
+        print(strat.thesis(strat.analyze(_chart(t), source=session_source(None, datetime.now(NY)))), "\n")
     return 0
 
 
@@ -414,8 +441,31 @@ def cmd_live_check(a: argparse.Namespace) -> int:
 
 
 def cmd_docs(a: argparse.Namespace) -> int:
+    """trader docs                      what Trader has read
+    trader docs add <link> [<link>…]    save web pages into his Strat documents, word for word
+    trader docs add-thestrat            every thestrat.ai docs page + the TrendSpider guide (--refresh to re-save)
+    trader docs <search words>          search them"""
+    from pathlib import Path
+
+    from . import knowledge
     from .knowledge import library
 
+    folder = Path(settings.strat_docs_dir).expanduser()
+    if a.words[:1] == ["add"]:
+        for url in a.words[1:]:
+            try:
+                print("saved", knowledge.save_page(url, folder))
+            except Exception as e:  # noqa: BLE001
+                print(f"couldn't save {url}: {e}")
+        return 0
+    if a.words[:1] == ["add-thestrat"]:
+        print("Saving the thestrat.ai docs and the TrendSpider guide, word for word (a minute or two)…")
+        r = knowledge.save_thestrat(folder, refresh="--refresh" in a.words,
+                                    progress=lambda n: print(f"  {n} pages…", end="\r", flush=True))
+        print(f"\nSaved {r['saved']}, already had {r['already_had']}, failed {len(r['failed'])} → {folder}")
+        for f in r["failed"]:
+            print("  failed:", f)
+        return 0
     if a.words:
         for h in library().search(" ".join(a.words), k=4):
             print(f"[{h['file']}] ({h['score']})\n{h['text'][:700]}\n")
@@ -455,8 +505,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--test-order", action="store_true", help="send one REAL tiny round-trip order (~$11)")
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_live_check)
-    s = sub.add_parser("docs")
-    s.add_argument("words", nargs="*")
+    s = sub.add_parser("docs", help="add <link> | add-thestrat [--refresh] | <search words>")
+    s.add_argument("words", nargs=argparse.REMAINDER)
     s.set_defaults(fn=cmd_docs)
     a = p.parse_args(argv)
     return a.fn(a)

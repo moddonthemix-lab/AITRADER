@@ -17,8 +17,8 @@ the budget you set, or the local model. His journal lives in `#trades`.
 | **Inside bars first** | 3-1-2, 2-1-2, 1-1-2 rank above every other setup. Volume is a tie-breaker, never the reason. |
 | **Grades** | A = full timeframe continuity + R:R ≥ 1.5 after fees. B = leaning continuity (only when behind on the weekly minimum). C = never. |
 | **Game plan** | After the close (16:10) and before the open (9:00): the inside bars ready for the next session, both triggers, stops, targets and the favoured side. Posted in `#trades` and on the dashboard. |
-| **Enters** | On the Strat trigger, confirmed by a **5-minute candle closing beyond it**. Scanning from 9:30, entries 9:40–15:45 New York. Checked against your Strat documents first. No chasing. |
-| **Exits** | **Hard stop -10%** (fees in, also a stop order on the exchange). **Take profit** at the Strat target. **Trailing stop** from +1.5R that locks a profit after fees and only moves forward. |
+| **Enters** | On the Strat trigger: the moment price breaks the setup bar's **high or low, wicks included** ("the break is the confirmation"). Scanning from 9:30, entries 9:40–15:45 New York. Checked against your Strat documents first. No chasing. |
+| **Exits** | **Hard stop -10%** (fees in, also a stop order on the exchange). **Take profit** at the Strat target. **Trailing stop** on as soon as a trade is in profit after fees: it locks a green close, then follows the best price 1R behind. |
 | **Minimum 2 trades/week** | Behind pace → B-grade setups are allowed. C-grade setups are never forced. |
 | **Pass discipline** | No trade = a *market* reason (chop, conflicting timeframes, no setup in the window…). A data problem is an *incident*, reported separately, never a pass. |
 | **Learns** | Every closed trade gets a lesson. Each pattern's edge (in R) is learned from his trades and backtests. A losing pattern is benched. He reads the Strat documents. |
@@ -141,7 +141,7 @@ All of these are settings in `.env` (see `.env.example`), enforced in code ([`tr
 | Minimum trades per week | `TRADER_MIN_TRADES_WEEK` | 2 |
 | Inside bars first | `TRADER_PRIORITY` | inside |
 | Minimum reward:risk after fees | `TRADER_MIN_RR` | 1.5 |
-| Trailing stop | `TRADER_TRAIL_ACTIVATE_R` / `TRADER_TRAIL_R` | on at +1.5R, 1R behind |
+| Trailing stop | `TRADER_TRAIL_START_PCT` / `TRADER_TRAIL_LOCK_PCT` / `TRADER_TRAIL_R` | on once in profit after fees, locks a green close, 1R behind |
 | Leverage | `TRADER_LEVERAGE` | the full max per ticker (stop moved inside liquidation when needed) |
 | Account he may trade with | `TRADER_ACCOUNT_USE_PCT` | 75% (the rest stays free) |
 | Risk per trade / max open | `TRADER_RISK_PER_TRADE_PCT` / `TRADER_MAX_OPEN` | 2% / 3 |

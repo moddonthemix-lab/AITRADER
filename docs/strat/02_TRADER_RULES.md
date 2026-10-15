@@ -11,9 +11,9 @@ These are enforced in code. Trader explains them; he never bends them.
   exchange itself, so it holds even if the Mac is asleep.
 - **Take profit at the target.** The target is the Strat target (the previous range's high/low). With no
   prior level in the way (price discovery), it's a measured move of 2R.
-- **Trailing stop that only locks in profit.** Once a trade is 1.5R in profit (R = entry-to-stop distance),
-  the stop jumps to lock in a profit after fees and then follows the best price 1R behind. It never moves
-  back and never drops below the locked profit — so once it's on, the trade can only close green.
+- **Trailing stop as soon as a trade is in profit after fees.** When price is 0.15% past the round-trip fees,
+  the stop jumps to lock in the fees plus 0.05%: from then on the trade can only close green. Then it follows
+  the best price 1R behind (R = entry-to-stop distance), and never moves back.
 - **Fees count.** Every target, R:R and P&L number is after the fee on the way in and out.
 - **Hard stop on price.** The -10% is measured on the position's price (fees included), so it means the
   same at any leverage.
@@ -35,8 +35,7 @@ These are enforced in code. Trader explains them; he never bends them.
 - **Pass discipline.** A day without a trade needs a **market** reason:
   - *chop* — inside/outside bars on the setup timeframes and no continuity
   - *conflicting MTF* — the timeframes disagree; no continuity behind any setup
-  - *no setup in window* — nothing actionable formed during the US session (scanning from 9:30, entries 9:40–15:45 New York, on a 5-minute close beyond
-    the trigger)
+  - *no setup in window* — nothing actionable formed during the US session (scanning from 9:30, entries 9:40–15:45 New York, on the break of the trigger)
   - also: the targets don't pay enough after fees; the Strat stop is wider than the hard stop; it already
     ran past the trigger (no chasing)
   - **Not** a data-feed reason. If market data fails, Trader retries, switches to Hyperliquid's own candles,

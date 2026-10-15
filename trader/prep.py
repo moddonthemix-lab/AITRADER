@@ -87,8 +87,8 @@ def text(plan: dict[str, Any], limit: int = 12) -> str:
     day = datetime.fromisoformat(plan["session"]).strftime("%a %b %d")
     rows = plan["inside"]
     head = (f"Game plan for {day} ({plan['kind']}): {len(rows)} inside bar{'s' if len(rows) != 1 else ''} "
-            f"across {plan['markets']} markets. Entries 9:40–15:45: a 5-minute candle must close beyond the inside "
-            "bar's high or low, with continuity at that moment.")
+            f"across {plan['markets']} markets. Entries 9:40–15:45, on the break of the inside bar's high or low "
+            "(wicks included), with continuity at that moment.")
     lines = [head]
     for r in rows[:limit]:
         tf = strat.TF_NAMES[r["tf"]]

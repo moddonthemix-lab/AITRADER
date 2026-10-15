@@ -105,7 +105,7 @@ ul.list { list-style: none; padding: 0; margin: 0; } ul.list li { padding: 7px 0
 
   <section class="card">
     <h2>📋 Game plan: inside bars for the next session <span class="spacer"></span><button id="prepBtn">Make it now</button></h2>
-    <div class="muted small">Made after the close (16:10) and again before the open (9:00), New York time. Entries 9:40–15:45, on a 5-minute close beyond the trigger, only with continuity at that moment.</div>
+    <div class="muted small">Made after the close (16:10) and again before the open (9:00), New York time. Entries 9:40–15:45, on the break of the trigger (the bar's high or low, wicks included), only with continuity at that moment.</div>
     <div id="gameplan"></div>
   </section>
 
@@ -119,6 +119,8 @@ ul.list { list-style: none; padding: 0; margin: 0; } ul.list li { padding: 7px 0
     <h2>📚 Strat documents</h2>
     <div class="drop" id="drop" tabindex="0" role="button">Drop PDFs, Word docs or notes here — or tap to choose.<br><span class="small muted">Trader reads them right away and uses them when he writes a thesis, reviews a trade or answers you. PDF, DOCX, TXT, MD, CSV, HTML, RTF · up to 20 MB.</span></div>
     <input type="file" id="file" multiple hidden accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json,.html,.htm,.rtf">
+    <div class="row" style="margin-top:10px"><input type="text" id="docUrl" placeholder="Paste a web page link (e.g. https://thestrat.ai/docs/inside-bar/)"><button id="docUrlBtn">Add page</button><button id="docStratBtn">Add all thestrat.ai docs</button></div>
+    <div class="muted small" style="margin-top:4px">Pages are saved word for word, with their source link, privately on this Mac.</div>
     <ul class="list" id="docs" style="margin-top:10px"></ul>
     <div class="row" style="margin-top:12px"><input type="text" id="docQ" placeholder="Search the documents (e.g. 3-1-2 stop)"><button id="docSearch">Search</button></div>
     <div id="docHits"></div>
@@ -360,6 +362,14 @@ async function deleteDoc(name, btn) {
   if (!confirm(`Delete “${name}”? Trader stops using it.`)) return;
   await busy(btn, async () => { await api("/api/docs?name=" + encodeURIComponent(name), { method: "DELETE" }); toast("Deleted."); refresh(); });
 }
+$("docUrlBtn").onclick = () => busy($("docUrlBtn"), async () => {
+  const r = await api("/api/docs/url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: $("docUrl").value }) });
+  toast("Saved " + r.saved); $("docUrl").value = ""; refresh();
+});
+$("docStratBtn").onclick = () => busy($("docStratBtn"), async () => {
+  const r = await api("/api/docs/thestrat", { method: "POST" });
+  toast(r.started ? "Saving all the thestrat.ai docs pages — about two minutes. They'll appear in the list." : r.note);
+});
 $("docSearch").onclick = () => busy($("docSearch"), async () => {
   const r = await api("/api/docs/search?q=" + encodeURIComponent($("docQ").value));
   $("docHits").replaceChildren(r.hits.length ? el("ul", { className: "list" }, ...r.hits.map(h => el("li", {}, el("span", { className: "chip" }, h.file), h.text))) : el("div", { className: "muted small" }, "No matches."));

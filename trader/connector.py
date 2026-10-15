@@ -300,7 +300,10 @@ class Connector:
         reads = []
         for t in ticks[:3]:
             try:
-                reads.append(strat.thesis(strat.analyze(self.chart_for(t))))
+                from .journal import ny_now
+                from .session import session_source
+
+                reads.append(strat.thesis(strat.analyze(self.chart_for(t), source=session_source(None, ny_now()))))
             except Exception as e:  # noqa: BLE001
                 reads.append(f"{t}: couldn't read the chart right now ({type(e).__name__}).")
         note = ""

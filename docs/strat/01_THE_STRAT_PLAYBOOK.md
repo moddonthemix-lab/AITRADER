@@ -59,18 +59,33 @@ range — the nearest prior high (long) or low (short) beyond the trigger.
 5. **Bigger timeframe wins ties** (Weekly over Daily over 4-hour). Monthly setups are watched for
    context but are too wide for the -10% hard stop.
 
-## Entries: when and how
+## Entries, stops and targets — as thestrat.ai/docs states them
 
-- **The trigger is the Strat trigger:** the break of the setup bar's high (long) or low (short).
-- **Confirmation: a 5-minute close.** A poke through the trigger is not an entry. Trader enters only when a
-  5-minute candle (on the market he trades) **closes beyond the trigger**. A wick through that closes back
-  inside is ignored.
-- **Entry hours: 9:40–15:45 New York.** The scan starts at the 9:30 open, but the first entry can only come
-  at 9:40, when the second 5-minute candle closes. No new entries after 15:45.
-- **The opposite side first cancels it.** If price breaks the stop side before the trigger confirms, the
-  plan is cancelled. That's a different setup now.
-- **Your documents have a say.** Before a plan is armed, Trader checks it against the Strat documents you
-  uploaded. If they rule the setup out, he skips it and quotes the rule.
+Trader trades these exactly; the quotes are the docs' own words. (The full pages are saved word for word in
+his Strat documents: `trader docs add-thestrat`.)
+
+| Signal | Trigger | Stop | Target (magnitude) |
+|---|---|---|---|
+| 2-1-2 reversal | "the inside bar's extreme, reversal side" | "the other side of the 1" | "the first candle's extreme" |
+| 2-1-2 continuation | "the inside bar's break, trend side" | "the other side of the 1" | "the leg before the pause, projected forward" (measured move) |
+| 3-1-2 | "the extreme of the inside bar" | "the other side of the 1, one penny under the inside bar's low (bullish) or over its high (bearish)" | "the far side of the 3" |
+| 2-2 reversal | "the first 2's extreme, on the reversal side" | "one penny beyond the low (bullish) or high (bearish) of the entry bar" | "the bar before the pattern" |
+| 1-2-2 (rev strat) | "the failed-break bar's extreme" | "one penny under the entry bar's low" | "the candle before the inside bar" |
+| 3-2-2 | "the middle 2's extreme" | "one penny beyond the low (bullish) or high (bearish) of the entry bar" | "the 3's extreme" |
+| Hammer / shooter | "the hammer's high" / "the shooter's low" | "one penny under the entry bar's low, not the hammer's wick" | "the prior candle's high" / "low" |
+| 3-2 | "the opposite side of the outside bar" (reversal) | entry bar | "carries no magnitude of its own" — the next prior level |
+| 2-2 momentum stack | the 2's extreme | "one penny beyond the entry bar's low (or high)" | "First objective is the prior extreme" |
+
+- **Entry: "The break is the confirmation."** Trader enters the moment price trades through the trigger —
+  the bar's high or low, wicks included. (`TRADER_ENTRY_CONFIRM=5m` waits for a 5-minute close instead.)
+- **Hammer:** "a large lower wick whose body closes in the top 33% of its range". **Shooter:** "a large upper
+  wick that opens and closes in the bottom 33% of its range".
+- **An equal high or low is still a 1:** "Matching an extreme without exceeding it 'didn't break the goal
+  line'"; "exceeding an extreme by even two cents fully qualifies a 2".
+- **Entry hours: 9:40–15:45 New York.** Scanning starts at the 9:30 open.
+- **The opposite side first cancels it.** If price breaks the stop side before the trigger, the plan is
+  cancelled. "A signal is only in force while its triggering bar is open."
+- **Your documents have a say.** Before a plan is armed, Trader checks it against your Strat documents.
 
 ## The game plan (before the open and after the close)
 
@@ -79,7 +94,7 @@ range — the nearest prior high (long) or low (short) beyond the trigger.
   the higher timeframes (Q, M, W) favour.
 - **Before the open (9:00):** the same read again, fresh for the bell.
 - A timeframe whose next bar hasn't opened yet has no direction yet. Its continuity is decided at the open,
-  and the trade is taken only if continuity agrees at the moment of the 5-minute confirmation.
+  and the trade is taken only if continuity agrees at the moment of the trigger.
 
 ## Don't chase
 

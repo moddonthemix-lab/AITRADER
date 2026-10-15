@@ -80,7 +80,7 @@ def run(symbol: str, tf: str = "D", source: Callable | None = None, start: str |
         if i <= busy_until:
             continue
         done = bars[: i + 1]
-        live = Bar(bars[i + 1].t, done[-1].c, done[-1].c, done[-1].c, done[-1].c, 0)  # a not-yet-traded next bar
+        live = Bar(bars[i + 1].t, done[-1].c, done[-1].c, done[-1].c, done[-1].c, 0, synthetic=True)  # not traded yet
         hist = done + [live]
         setups = [s for s in strat.find_setups(tf, hist, strat.label(hist)) if s.status == "waiting"]
         nxt = bars[i + 1]
@@ -94,7 +94,10 @@ def run(symbol: str, tf: str = "D", source: Callable | None = None, start: str |
                 grade = "A" if agree == len(opens) else "B" if agree >= 2 else "C"
                 if grade not in grades:
                     continue
-                lv = risk.levels(s.direction, entry, s.stop, s.target)
+                # Daily bars can't show where the entry bar's low/high was when the trigger broke, so the backtest
+                # keeps the setup bar's far side as the stop (wider, so cautious); live trading uses the real one.
+                stop = s.stop
+                lv = risk.levels(s.direction, entry, stop, s.target)
                 if lv.problem:
                     continue
                 key = (grade == "A", s.inside, lv.rr)  # the live scanner's order: grade, inside bars, R:R

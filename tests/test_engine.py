@@ -29,7 +29,7 @@ def test_paper_trade_from_plan_to_trailing_profit(journal, wednesday):
     prices["xyz:NVDA"] = 110.1
     e.watch_plans(wednesday)
     t = journal.open_trades()[0]
-    assert t["side"] == "long" and t["stop"] == 106 and t["target"] == 120 and t["fees"] > 0
+    assert t["side"] == "long" and t["stop"] == 106 and t["target"] == 142 and t["fees"] > 0
 
     prices["xyz:NVDA"] = 117.0  # > 1.5R in profit: the trailing stop switches on
     e.manage_positions()
@@ -48,7 +48,7 @@ def test_take_profit_at_target(journal, wednesday):
     e.scan(wednesday)
     prices["xyz:NVDA"] = 110.05
     e.watch_plans(wednesday)
-    prices["xyz:NVDA"] = 120.2
+    prices["xyz:NVDA"] = 142.2
     e.manage_positions()
     t = journal.all("SELECT * FROM trades")[0]
     assert t["exit_reason"] == "target" and t["pnl"] > 0

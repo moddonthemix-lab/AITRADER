@@ -11,10 +11,9 @@ Leverage: always each market's full maximum (TRADER_LEVERAGE=max: CBRS 10x, SP50
     whose Strat stop is further away than the hard stop is skipped — its risk doesn't fit the rule.
 Take profit: at the Strat target (the previous range's high/low). With no prior level in the way (price
     discovery) the target is a measured move of 2R.
-Trailing stop: once the trade is TRADER_TRAIL_ACTIVATE_R in profit (1.5R; R = the setup's entry-to-stop
-    distance), the stop jumps to lock in a profit AFTER fees and follows the best price TRADER_TRAIL_R (1R)
-    behind. It never moves back, and never below that locked profit — so once it's active, the trade can only
-    close green. (TRADER_TRAIL_MODE=pct uses fixed percentages instead.)
+Trailing stop: on as soon as the trade is in profit after fees (TRADER_TRAIL_START_PCT past the round-trip
+    fees). The stop jumps to lock in the fees plus TRADER_TRAIL_LOCK_PCT — a guaranteed green close — then
+    follows the best price TRADER_TRAIL_R (1R) behind. It never moves back.
 Only setups whose net reward after fees is at least TRADER_MIN_RR times the net risk are taken.
 """
 
@@ -79,8 +78,9 @@ def lock_price(entry: float, side: str) -> float:
 
 
 def activation_gain() -> float:
-    """How far in profit (as a fraction) before the trailing stop switches on; always above the lock."""
-    return max(settings.trail_activate_pct / 100, 2 * fee() + settings.trail_lock_pct / 100 + 0.0025)
+    """In profit after fees: the gain (as a fraction) at which the trailing stop switches on, always above the
+    lock so the new stop sits below the price."""
+    return 2 * fee() + max(settings.trail_start_pct, settings.trail_lock_pct + 0.05) / 100
 
 
 def net_rr(entry: float, stop: float, target: float) -> float:
@@ -166,10 +166,8 @@ def manage(t: dict[str, Any], price: float, sz_decimals: int = 2) -> Step:
 
     gain = (peak - entry) / entry * d
     r_unit = abs(entry - (t.get("initial_stop") or t["stop"])) / entry  # the setup's own risk, as a fraction
-    if settings.trail_mode == "r" and r_unit > 0:
-        start, dist = max(activation_gain(), settings.trail_activate_r * r_unit), settings.trail_r * r_unit
-    else:
-        start, dist = activation_gain(), settings.trail_pct / 100
+    start = max(activation_gain(), settings.trail_activate_r * r_unit)
+    dist = settings.trail_r * r_unit if r_unit > 0 else 0.01
     if gain >= start:
         lock = lock_price(entry, side)
         trail = peak * (1 - d * dist)

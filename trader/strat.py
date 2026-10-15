@@ -45,17 +45,29 @@ def label(bars: list[Bar]) -> list[str | None]:
 
 
 def candle_shape(b: Bar) -> str | None:
-    """Hammer (long lower wick, closes high) or shooter (long upper wick, closes low)."""
+    """thestrat.ai/docs/hammer: "a bar with a large lower wick whose body closes in the top 33% of its range".
+    thestrat.ai/docs/shooter: "a bar with a large upper wick that opens and closes in the bottom 33% of its range"."""
     rng = b.h - b.l
     if rng <= 0:
         return None
-    body = abs(b.c - b.o)
-    lower, upper = min(b.o, b.c) - b.l, b.h - max(b.o, b.c)
-    if lower >= 0.6 * rng and lower >= 2 * body:
+    if min(b.o, b.c) >= b.l + rng * 2 / 3:
         return "hammer"
-    if upper >= 0.6 * rng and upper >= 2 * body:
+    if max(b.o, b.c) <= b.l + rng / 3:
         return "shooter"
     return None
+
+
+def measured_move(bars: list[Bar], types: list[str | None], end: int, direction: str) -> float | None:
+    """thestrat.ai/docs/measured-move: "the distance of the previous move, projected from the trigger" — the
+    leg is the run of same-direction 2s ending at bar `end` (e.g. "Leg one runs 78.70 to 96.68")."""
+    want = "2U" if direction == "long" else "2D"
+    start = end
+    while start - 1 >= 1 and types[start - 1] == want:
+        start -= 1
+    if types[end] != want:
+        return None
+    run = bars[max(0, start - 1):end + 1]  # from the low (high) the leg launched from — the bar before the first 2
+    return (bars[end].h - min(x.l for x in run)) if direction == "long" else (max(x.h for x in run) - bars[end].l)
 
 
 @dataclass
@@ -71,6 +83,7 @@ class Setup:
     inside: bool = False    # built on an inside bar (Trader's first priority)
     rvol: float | None = None   # volume of the setup bar vs its 20-bar average
     family: str = ""        # the pattern without the direction words, for learning ("3-1-2", "2-2 reversal")
+    entry_bar_stop: bool = False  # stop = one penny beyond the entry bar's low/high (2-2 family, hammer, 3-2)
 
     def describe(self, fmt: Callable[[float | None], str]) -> str:
         verb = "above" if self.direction == "long" else "below"
@@ -139,55 +152,75 @@ def find_setups(tf: str, bars: list[Bar], types: list[str | None]) -> list[Setup
         return []
     a, b, cur = bars[-3], bars[-2], bars[-1]
     ta, tb = types[-3], types[-2]
+    mother = bars[-4] if len(bars) >= 5 else None  # the bar before the inside bar (the motherbar)
     history = bars[:-1]
     rvol = relative_volume(bars, len(bars) - 2)
     setups: list[Setup] = []
+    live = not cur.synthetic  # the entry bar exists (during the session)
 
-    def add(name: str, direction: str, first_target: float | None) -> None:
+    def add(name: str, direction: str, first_target: float | None, entry_bar_stop: bool = False,
+            leg: float | None = None) -> None:
+        """entry_bar_stop: the 2-2 family, hammer/shooter, 3-2 — thestrat.ai: "Stop: one penny beyond the low
+        (bullish) or high (bearish) of the entry bar." Otherwise (2-1-2, 3-1-2): "the other side of the 1".
+        leg: a measured move (continuations without a magnitude)."""
         if direction == "long":
             trigger, stop = b.h, b.l
+            if entry_bar_stop and live and cur.l > b.l:
+                stop = cur.l - 0.01
+            if leg:
+                first_target = trigger + leg
             target = _target_above(history[:-1], trigger, first_target)
             hit = cur.h > trigger
             done = target is not None and cur.h >= target
         else:
             trigger, stop = b.l, b.h
+            if entry_bar_stop and live and cur.h < b.h:
+                stop = cur.h + 0.01
+            if leg:
+                first_target = trigger - leg
             target = _target_below(history[:-1], trigger, first_target)
             hit = cur.l < trigger
             done = target is not None and cur.l <= target
         status = "target hit" if hit and done else "triggered" if hit else "waiting"
         setups.append(Setup(tf, name, direction, round(trigger, 4), None if target is None else round(target, 4),
-                            round(stop, 4), status, inside=tb == "1", rvol=rvol, family=family_of(name)))
+                            round(stop, 4), status, inside=tb == "1", rvol=rvol, family=family_of(name),
+                            entry_bar_stop=entry_bar_stop))
+
+    n = len(bars)
 
     if tb == "1":  # inside bar: 2-1-2 / 3-1-2 — break of the inside bar decides
         if ta == "3":
             add("3-1-2U", "long", a.h)
             add("3-1-2D", "short", a.l)
-        elif ta == "2U":
-            add("2U-1-2U continuation", "long", a.h)
+        elif ta == "2U":  # docs/inside-bar: continuation target = "the leg before the pause, projected forward"
+            add("2U-1-2U continuation", "long", None, leg=measured_move(bars, types, n - 3, "long"))
             add("2U-1-2D reversal", "short", a.l)
         elif ta == "2D":
             add("2D-1-2U reversal", "long", a.h)
-            add("2D-1-2D continuation", "short", a.l)
+            add("2D-1-2D continuation", "short", None, leg=measured_move(bars, types, n - 3, "short"))
         else:
             add("1-1-2U (compound inside)", "long", a.h)
             add("1-1-2D (compound inside)", "short", a.l)
     elif tb == "2D":
         prefix = {"1": "1-2D-2U Rev Strat", "3": "3-2D-2U reversal", "2D": "2D-2D-2U reversal"}.get(ta, "2D-2U reversal")
-        add(prefix, "long", a.h)
-        add("2D-2D continuation" if ta != "2D" else "2D-2D-2D continuation", "short", None)
+        # docs/1-2-2: "Magnitude: the candle before the inside bar"; docs/2-2-reversal: "the bar before the pattern"
+        add(prefix, "long", (mother.h if mother else None) if ta == "1" else a.h, entry_bar_stop=True)
+        # docs/2-2-reversal (momentum stack): "First objective is the prior extreme"
+        add("2D-2D continuation" if ta != "2D" else "2D-2D-2D continuation", "short", None, entry_bar_stop=True)
     elif tb == "2U":
         prefix = {"1": "1-2U-2D Rev Strat", "3": "3-2U-2D reversal", "2U": "2U-2U-2D reversal"}.get(ta, "2U-2D reversal")
-        add(prefix, "short", a.l)
-        add("2U-2U continuation" if ta != "2U" else "2U-2U-2U continuation", "long", None)
-    elif tb == "3":
-        add("3-2U", "long", None)
-        add("3-2D", "short", None)
+        add(prefix, "short", (mother.l if mother else None) if ta == "1" else a.l, entry_bar_stop=True)
+        add("2U-2U continuation" if ta != "2U" else "2U-2U-2U continuation", "long", None, entry_bar_stop=True)
+    elif tb == "3":  # docs/3-2: "carries no magnitude of its own" — the next prior level, else a measured target
+        add("3-2U", "long", None, entry_bar_stop=True)
+        add("3-2D", "short", None, entry_bar_stop=True)
 
     shape = candle_shape(b)
+    # docs/hammer: "Trigger: the hammer's high. Magnitude: the prior candle's high." (mirror for the shooter)
     if shape == "hammer" and not any(s.direction == "long" and s.trigger == round(b.h, 4) for s in setups):
-        add("hammer", "long", None)
+        add("hammer", "long", a.h, entry_bar_stop=True)
     elif shape == "shooter" and not any(s.direction == "short" and s.trigger == round(b.l, 4) for s in setups):
-        add("shooter", "short", None)
+        add("shooter", "short", a.l, entry_bar_stop=True)
     if shape:
         for s in setups:
             if (shape == "hammer" and s.direction == "long") or (shape == "shooter" and s.direction == "short"):
@@ -315,12 +348,63 @@ def is_chop(a: dict[str, Any]) -> bool:
         and a["bias"] in ("neutral", "leaning bullish", "leaning bearish")
 
 
+AMO_SETUP_TFS = ("M", "W", "D", "4H")  # the timeframes AMO writes the thesis around
+
+
+# ------------------------------------------------------------------ AMO's thesis, take and plan (ported as-is)
+def take(a: dict[str, Any]) -> dict[str, Any]:
+    """AMO's own read: a grade and the single best setup, following the playbook rule
+    'take reversals back through a previous range, in the direction of FTFC'."""
+    fmt = fmt_factory(a["price"])
+    setups: list[Setup] = a["_setups"]
+    ftfc = a["continuity"]["ftfc"]
+    aligned = [s for s in setups if s.with_continuity and s.status in ("waiting", "triggered")]
+    order = {"M": 0, "W": 1, "D": 2, "4H": 3}
+
+    def score(s: Setup) -> tuple:
+        rr = risk_reward(s) or 0
+        return (s.status == "waiting", rr >= 1.5, rr, -order[s.tf])
+
+    best = max(aligned, key=score) if aligned else None
+    rr = risk_reward(best) if best else None
+    if best is None:
+        if "bull" in a["bias"] or "bear" in a["bias"]:
+            grade, verdict = "C", (f"{a['bias']} but nothing actionable in that direction yet — "
+                                   "wait for an inside bar or a 2-2 back in line with continuity")
+        else:
+            grade, verdict = "—", "stand aside: timeframes are split, so there's no continuity to trade with"
+        return {"grade": grade, "verdict": verdict, "best": None, "rr": None}
+
+    if ftfc and best.status == "waiting" and (rr or 0) >= 1.5:
+        grade = "A"
+    elif ftfc or (best.status == "waiting" and (rr or 0) >= 1):
+        grade = "B"
+    else:
+        grade = "C"
+    verb = "above" if best.direction == "long" else "below"
+    parts = [f"{grade}-grade {best.direction}: {TF_NAMES[best.tf]} {best.name}"]
+    if best.status == "waiting":
+        parts.append(f"triggers {verb} {fmt(best.trigger)}")
+    else:
+        parts.append(f"already triggered {verb} {fmt(best.trigger)} — don't chase, wait for a pullback "
+                     f"or the next trigger")
+    if best.target is not None:
+        parts.append(f"target {fmt(best.target)}")
+    else:
+        parts.append("no prior level in the way (price discovery)")
+    parts.append(f"stop {fmt(best.stop)}" + (f" (R:R {rr:g})" if rr else ""))
+    why = "full timeframe continuity" if ftfc else a["why"]
+    verdict = ", ".join(parts) + f". Why: {why}."
+    return {"grade": grade, "verdict": verdict, "best": asdict(best), "rr": rr}
+
+
 def thesis(a: dict[str, Any]) -> str:
-    """The written multi-timeframe read, for the journal and for the boss."""
     fmt = fmt_factory(a["price"])
     frames: dict[str, Timeframe] = a["_frames"]
     setups: list[Setup] = a["_setups"]
-    lines = [f"{a['symbol']} — The Strat read (price {fmt(a['price'])})"]
+    lines = [f"{a['symbol']} — The Strat thesis (price {fmt(a['price'])})", "",
+             f"Trader's take: {take(a)['verdict']}", ""]
+
     cont = " · ".join(f"{'60m' if tf == '60' else tf} {frames[tf].arrow}" for tf in CONTINUITY_TFS if tf in frames)
     ftfc = {"up": "FULL TIMEFRAME CONTINUITY UP", "down": "FULL TIMEFRAME CONTINUITY DOWN"}.get(
         a["continuity"]["ftfc"], "no full continuity")
@@ -328,24 +412,97 @@ def thesis(a: dict[str, Any]) -> str:
     twos_up, twos_down = a["most_2s"]["up"], a["most_2s"]["down"]
     lines.append(f"Most 2s: {len(twos_up)} up ({', '.join(twos_up) or '—'}) vs {len(twos_down)} down "
                  f"({', '.join(twos_down) or '—'})")
-    for tf in (t for t in ("M",) + SETUP_TFS if t in frames):
+    lines.append("")
+
+    for tf in (t for t in AMO_SETUP_TFS if t in frames):
         f = frames[tf]
-        seq = "-".join(f.sequence[-3:] + [f"[{f.type}]"])
-        if f.waiting:
+        if f.waiting:  # Trader: before the open / after the close — the last bar is finished
             lines.append(f"{TF_NAMES[tf]}: {'-'.join(f.sequence[-4:])} — last bar complete "
                          f"({fmt(f.prev_low)}–{fmt(f.prev_high)}); the next one hasn't opened yet.")
             continue
+        seq = "-".join(f.sequence[-3:] + [f"[{f.type}]"])
         where = ("inside last bar's range" if f.type == "1" else
                  "broke last bar's HIGH" if f.type == "2U" else
                  "broke last bar's LOW" if f.type == "2D" else "broke BOTH sides (outside bar)")
         shape = f", last bar was a {f.shape}" if f.shape else ""
         lines.append(f"{TF_NAMES[tf]}: {seq} — current bar {where}{shape}. "
-                     f"Open {fmt(f.open)} ({'above' if f.up else 'below'}).")
+                     f"Open {fmt(f.open)} ({'above' if f.up else 'below'}). "
+                     f"Prior bar {fmt(f.prev_low)}–{fmt(f.prev_high)}; this bar {fmt(f.low)}–{fmt(f.high)}.")
+    lines.append("")
     lines.append(f"Bias: {a['bias'].upper()} — {a['why']}.")
+
     live = [s for s in setups if s.status == "triggered" and s.with_continuity is not False]
     waiting = [s for s in setups if s.status == "waiting" and s.with_continuity is not False]
+    against = [s for s in setups if s.with_continuity is False and s.status != "target hit"]
     if live:
-        lines.append("In force: " + "; ".join(s.describe(fmt) for s in live[:3]) + ".")
+        lines.append("In force: " + "; ".join(s.describe(fmt) for s in live) + ".")
     if waiting:
         lines.append("Watching: " + "; ".join(s.describe(fmt) for s in waiting[:4]) + ".")
+    if against:
+        lines.append("Counter-trend (only if continuity flips): " + "; ".join(s.describe(fmt) for s in against[:2]) + ".")
+    done = [s for s in setups if s.status == "target hit"]
+    if done:
+        lines.append("Already played out: " + "; ".join(f"{TF_NAMES[s.tf]} {s.name} reached {fmt(s.target)}"
+                                                       for s in done[:3]) + ".")
+
+    plan = _plan(a, frames, fmt)
+    lines += [plan, "", "Not financial advice — a mechanical read of price structure."]
     return "\n".join(lines)
+
+
+def _plan(a: dict[str, Any], frames: dict[str, Timeframe], fmt) -> str:
+    """Trading plan anchored only on the opens that agree with the bias."""
+    price = a["price"]
+    names = TF_NAMES
+    if "bullish" not in a["bias"] and "bearish" not in a["bias"]:
+        w, d = frames["W"], frames["D"]
+        return (f"Plan: no continuity — wait. Holding above the Weekly open {fmt(w.open)} and Daily open "
+                f"{fmt(d.open)} aligns things up; losing both aligns down. "
+                f"Range to respect: Weekly {fmt(w.low)}–{fmt(w.high)}.")
+    bull = "bullish" in a["bias"]
+    agree = [tf for tf in ("M", "W", "D", "60") if tf in frames and frames[tf].up == bull]
+    anchors = [tf for tf in agree if tf != "M"][:2] or agree[:1]
+    opens = " and ".join(f"{names[tf]} open {fmt(frames[tf].open)}" for tf in anchors)
+    # The thesis breaks if the highest-timeframe anchor's open is lost.
+    pivot = anchors[0]
+    levels = []
+    for tf in ("D", "W", "M"):
+        f = frames[tf]
+        period = {"D": "day", "W": "week", "M": "month"}[tf]
+        this, last = ("today's", "yesterday's") if period == "day" else (f"this {period}'s", f"last {period}'s")
+        pairs = ((f.high, f"{this} high"), (f.prev_high, f"{last} high")) if bull else \
+                ((f.low, f"{this} low"), (f.prev_low, f"{last} low"))
+        for lvl, name in pairs:
+            if (lvl > price) if bull else (lvl < price):
+                levels.append((name, lvl))
+    seen, uniq = set(), []
+    for name, lvl in sorted(levels, key=lambda x: x[1], reverse=not bull):
+        if round(lvl, 4) not in seen:
+            seen.add(round(lvl, 4))
+            uniq.append(f"{name} {fmt(lvl)}")
+    side, way = ("longs", "above") if bull else ("shorts", "below")
+    text = f"Plan: favour {side} while price holds {way} the {opens}. "
+    if uniq:
+        text += f"{'Upside' if bull else 'Downside'} levels: {', '.join(uniq[:3])}. "
+    else:
+        text += ("No prior highs overhead — price discovery (all-time-high territory). " if bull
+                 else "No prior lows below in view — price discovery to the downside. ")
+    against = [tf for tf in ("M", "W") if tf in frames and frames[tf].up != bull]
+    if against:
+        text += (f"Higher timeframes ({' and '.join(names[t] for t in against)}) still point the other way, "
+                 f"so this is a lower-timeframe play — keep it tight. ")
+    text += f"Negated if price gets back {'below' if bull else 'above'} the {names[pivot]} open {fmt(frames[pivot].open)}."
+    return text
+
+
+def short_reason(a: dict[str, Any]) -> str:
+    """Why the bias is what it is, in a few words."""
+    if a["continuity"]["ftfc"]:
+        return "full timeframe continuity"
+    if "override" in a["why"]:
+        side = "above" if "bull" in a["bias"] else "below"
+        return f"daily and hourly trading {side} their opens"
+    if a["bias"] == "neutral":
+        return "timeframes split"
+    n = len(a["continuity"]["up" if "bull" in a["bias"] else "down"])
+    return f"{n} of {len(a['timeframes'])} timeframes {'above' if 'bull' in a['bias'] else 'below'} their opens"

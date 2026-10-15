@@ -109,29 +109,31 @@ class Library:
             for i, text in enumerate(chunks(read_text(p))):
                 words = _words(text)
                 self.pieces.append({"file": p.relative_to(root).as_posix(), "i": i, "text": text,
-                                    "words": words, "set": set(words)})
+                                    "words": words, "set": set(words), "builtin": root == BUILTIN})
         self._stamp = stamp
         return len(self.pieces)
 
-    def search(self, query: str, k: int = 3) -> list[dict[str, Any]]:
+    def search(self, query: str, k: int = 3, boss_only: bool = False) -> list[dict[str, Any]]:
+        """boss_only: only the boss's own documents and saved pages, not the built-in playbook."""
         self.refresh()
         q = set(_words(query))
-        if not q or not self.pieces:
+        pieces = [p for p in self.pieces if not (boss_only and p.get("builtin"))]
+        if not q or not pieces:
             return []
-        n = len(self.pieces)
-        df = {w: sum(1 for p in self.pieces if w in p["set"]) for w in q}
+        n = len(pieces)
+        df = {w: sum(1 for p in pieces if w in p["set"]) for w in q}
         scored = []
-        for p in self.pieces:
+        for p in pieces:
             s = sum(math.log(1 + n / df[w]) * (1 + math.log(p["words"].count(w))) for w in q if w in p["set"])
             if s > 0:
                 scored.append((s / math.sqrt(len(p["words"]) + 20), p))
         scored.sort(key=lambda x: -x[0])
         return [{"file": p["file"], "text": p["text"], "score": round(s, 3)} for s, p in scored[:k]]
 
-    def context(self, query: str, k: int = 3, limit: int = 2400) -> str:
+    def context(self, query: str, k: int = 3, limit: int = 2400, boss_only: bool = False) -> str:
         """The best-matching pieces, labeled with their file, for a prompt."""
         out, used = [], 0
-        for h in self.search(query, k):
+        for h in self.search(query, k, boss_only):
             piece = f"[{h['file']}] {h['text']}"
             if used + len(piece) > limit:
                 piece = piece[:max(0, limit - used)]
@@ -155,3 +157,106 @@ def library() -> Library:
     if _library is None:
         _library = Library()
     return _library
+
+
+# ------------------------------------------------------------------ saving web pages (exact words)
+THESTRAT_INDEX = "https://thestrat.ai/docs/the-3-universal-truths-that-govern-price/"
+TRENDSPIDER_GUIDE = ("https://trendspider.com/learning-center/"
+                     "a-comprehensive-guide-to-thestrat-trading-strategy-for-the-modern-trader/")
+BROWSER = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                         "Version/17.0 Safari/605.1.15",
+           "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"}
+# Site furniture that isn't part of a page's teaching (newsletter boxes, footers) — removed, nothing else is.
+CHROME = [re.compile(r"Reading this the whole way through\?.*?Required \.", re.S),
+          re.compile(r"Get the next one by email.*\Z", re.S),
+          re.compile(r"^\s*TheStrat Docs\s*$", re.M)]
+
+
+def fetch_html(url: str) -> str:
+    import subprocess
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=BROWSER), timeout=30) as r:
+            return r.read().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — some sites refuse Python's client; macOS always has curl
+        out = subprocess.run(["curl", "-sSL", "-m", "30", "-A", BROWSER["User-Agent"], url],
+                             capture_output=True, text=True, timeout=40)
+        if out.returncode != 0 or len(out.stdout) < 500:
+            raise RuntimeError(f"couldn't download {url}")
+        return out.stdout
+
+
+def page_text(html: str) -> tuple[str, str]:
+    """(title, the page's own words): the article body, paragraphs kept, markup and site furniture removed."""
+    t = re.search(r"(?is)<title[^>]*>(.*?)</title>", html)
+    title = unescape(re.sub(r"\s+", " ", t.group(1))).strip() if t else ""
+    m = re.search(r"(?is)<article[^>]*>(.*?)</article>", html) or re.search(r"(?is)<main[^>]*>(.*?)</main>", html)
+    s = m.group(1) if m else html
+    s = re.sub(r"(?is)<(script|style|nav|header|footer|svg|form|noscript)[^>]*>.*?</\1>", " ", s)
+    s = re.sub(r"(?i)<br\s*/?>|</p>|</li>|</h[1-6]>|</tr>|</blockquote>", "\n", s)
+    s = re.sub(r"(?i)<li[^>]*>", "\n- ", s)
+    text = unescape(re.sub(r"<[^>]+>", " ", s))
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    for pat in CHROME:
+        text = pat.sub("", text)
+    return title, re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def slug(url: str) -> str:
+    from urllib.parse import urlparse
+
+    u = urlparse(url)
+    tail = [p for p in u.path.split("/") if p][-1:] or ["index"]
+    return re.sub(r"[^a-z0-9-]+", "-", f"{tail[0]}".lower()).strip("-")[:80] or "page"
+
+
+def save_page(url: str, folder: Path, subfolder: str | None = None) -> Path:
+    """Save one web page into the Strat documents, word for word, with its source link on top."""
+    from datetime import date
+    from urllib.parse import urlparse
+
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("only http(s) links")
+    title, text = page_text(fetch_html(url))
+    if len(text) < 200:
+        raise RuntimeError(f"no readable text on {url}")
+    site = subfolder or (urlparse(url).hostname or "web").removeprefix("www.")
+    dest = folder / site / f"{slug(url)}.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(f"# {title}\n\nSource: {url}\nSaved {date.today().isoformat()} — the page's own words, "
+                    f"unedited.\n\n{text}\n")
+    return dest
+
+
+def thestrat_links(index_html: str | None = None) -> list[str]:
+    html = index_html if index_html is not None else fetch_html(THESTRAT_INDEX)
+    links = set(re.findall(r'href="(https://thestrat\.ai/docs/[a-z0-9-]+/)"', html))
+    links |= {"https://thestrat.ai" + p for p in re.findall(r'href="(/docs/[a-z0-9-]+/)"', html)}
+    links.add(THESTRAT_INDEX)
+    return sorted(links)
+
+
+def save_thestrat(folder: Path, refresh: bool = False, pause: float = 0.6,
+                  progress: Any = None) -> dict[str, Any]:
+    """Every thestrat.ai docs page plus the TrendSpider guide, word for word (skips ones already saved)."""
+    import time as _time
+
+    saved, skipped, failed = [], [], []
+    for url in thestrat_links() + [TRENDSPIDER_GUIDE]:
+        site = "thestrat.ai" if "thestrat.ai" in url else "trendspider.com"
+        if not refresh and (folder / site / f"{slug(url)}.md").exists():
+            skipped.append(url)
+            continue
+        try:
+            save_page(url, folder, site)
+            saved.append(url)
+        except Exception as e:  # noqa: BLE001
+            failed.append(f"{url} ({type(e).__name__})")
+        if progress:
+            progress(len(saved) + len(skipped) + len(failed))
+        _time.sleep(pause)
+    if _library is not None:
+        _library.refresh()
+    return {"saved": len(saved), "already_had": len(skipped), "failed": failed}

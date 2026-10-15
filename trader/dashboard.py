@@ -93,8 +93,8 @@ class Dashboard:
             "week_trades": j.trades_opened_since(week_start(today), mode), "min_week": settings.min_trades_week,
             "rules": {"hard_stop_pct": settings.hard_stop_pct, "min_rr": settings.min_rr, "fee_pct": settings.fee_pct,
                       "risk_pct": settings.risk_per_trade_pct, "leverage": "max" if settings.leverage >= 1000 else settings.leverage,
-                      "trail": f"+{settings.trail_activate_r:g}R, {settings.trail_r:g}R behind"
-                      if settings.trail_mode == "r" else f"+{settings.trail_activate_pct:g}%, {settings.trail_pct:g}% behind",
+                      "trail": f"on once in profit after fees (locks +{settings.trail_lock_pct:g}% after fees), "
+                               f"{settings.trail_r:g}R behind",
                       "window": f"{settings.window_start}–{settings.window_end} New York"},
             "hub": e.hub is not None,
             "positions": opened, "plans": plans, "trades": trades,
@@ -158,6 +158,30 @@ class Dashboard:
         library().refresh()
         return {"deleted": name}
 
+    def add_url(self, url: str) -> dict[str, Any]:
+        """Save a web page into the Strat documents, word for word."""
+        from . import knowledge
+
+        dest = knowledge.save_page(url.strip(), docs_folder())
+        library().refresh()
+        return {"saved": dest.relative_to(docs_folder()).as_posix()}
+
+    def add_thestrat(self) -> dict[str, Any]:
+        """Every thestrat.ai docs page + the TrendSpider guide, in the background."""
+        from . import knowledge
+
+        if getattr(self, "_saving", False):
+            return {"started": False, "note": "already saving"}
+        self._saving = True
+
+        def run() -> None:
+            try:
+                knowledge.save_thestrat(docs_folder())
+            finally:
+                self._saving = False
+        threading.Thread(target=run, name="trader-docs", daemon=True).start()
+        return {"started": True}
+
     def search_docs(self, q: str) -> list[dict[str, Any]]:
         return [{"file": h["file"], "text": h["text"][:700], "score": h["score"]} for h in library().search(q, k=5)]
 
@@ -186,7 +210,9 @@ class Dashboard:
     def read(self, ticker: str) -> dict[str, Any]:
         from .cli import _chart
 
-        a = strat.analyze(_chart(ticker))
+        from .session import session_source
+
+        a = strat.analyze(_chart(ticker), source=session_source(self.engine.chart_source, datetime.now(NY)))
         return {"ticker": ticker, "thesis": strat.thesis(a), "bias": a["bias"]}
 
     def backtest(self, tickers: list[str], weekly: bool = False) -> dict[str, Any]:
@@ -280,6 +306,10 @@ def make_handler(dash: Dashboard) -> type[BaseHTTPRequestHandler]:
                     if n > MAX_FILE_BYTES:
                         return self._send(413, {"error": "files up to 20 MB"})
                     return self._send(200, dash.upload(self.headers.get("X-Filename", ""), self.rfile.read(n)))
+                if method == "POST" and path == "/api/docs/url":
+                    return self._send(200, dash.add_url(str(self._json_body().get("url", ""))))
+                if method == "POST" and path == "/api/docs/thestrat":
+                    return self._send(200, dash.add_thestrat())
                 if method == "DELETE" and path == "/api/docs":
                     return self._send(200, dash.delete_doc(q.get("name", "")))
                 if method == "POST" and path == "/api/prep":

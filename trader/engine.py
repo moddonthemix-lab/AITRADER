@@ -211,7 +211,7 @@ class Engine:
             return True, ""
         lib = library()
         lib.refresh()
-        theirs = [p for p in lib.pieces if not str(p["file"]).startswith(("01_THE_STRAT_PLAYBOOK", "02_TRADER_RULES"))]
+        theirs = [p for p in lib.pieces if not p.get("builtin")]
         if not theirs:
             return True, ""
         key = f"doccheck:{day.isoformat()}:{c.inst.coin}:{c.setup.tf}:{c.setup.name}:{c.setup.trigger}"
@@ -219,7 +219,7 @@ class Engine:
         if cached is not None:
             return cached == "TAKE", self.j.get(key + ":why") or ""
         docs = lib.context(f"{c.setup.name} {c.setup.family} entry {c.setup.direction} inside bar continuity "
-                           f"{strat.TF_NAMES[c.setup.tf]} rules", k=4)
+                           f"{strat.TF_NAMES[c.setup.tf]} rules", k=4, boss_only=True)
         prompt = (f"Check this planned trade against the boss's Strat documents below.\n\nPlan: {c.summary()}\n\n"
                   f"The read:\n{c.thesis[:1500]}\n\nFrom the documents:\n{docs}\n\n"
                   "Reply on the FIRST line with exactly TAKE or SKIP. Say SKIP only if the documents clearly rule "
@@ -259,7 +259,8 @@ class Engine:
                 "tf": s.tf, "grade": c.grade, "inside": int(s.inside), "rvol": s.rvol,
                 "with_continuity": int(bool(s.with_continuity)), "entry": lv.entry, "stop": lv.stop,
                 "target": lv.target, "hard_stop": lv.hard_stop, "rr": lv.rr, "target_kind": lv.target_kind,
-                "entry_type": c.entry_type, "source": c.source, "summary": c.summary(), "thesis": c.thesis}
+                "entry_type": c.entry_type, "source": c.source, "summary": c.summary(), "thesis": c.thesis,
+                "basis": c.basis, "entry_bar_stop": int(s.entry_bar_stop)}
         expires = bar_close(s.tf, now)
         ask = self.broker.live and settings.live_approval != "auto"
         status = "waiting_approval" if ask else "armed"
@@ -382,7 +383,8 @@ class Engine:
 
     def confirmed(self, d: dict[str, Any], now: datetime, px: float, sign: int) -> bool:
         """The Strat trigger, confirmed: a finished 5-minute candle CLOSED beyond the trigger during today's
-        session (TRADER_ENTRY_CONFIRM=5m). With "touch", the first print through the trigger is enough."""
+        session (TRADER_ENTRY_CONFIRM=5m). With "break" (the default), the first print through the trigger —
+        wicks included — is the entry: thestrat.ai, "the break is the confirmation"."""
         if settings.entry_confirm != "5m":
             return d["entry_type"] == "market" or (px - d["entry"]) * sign >= 0
         try:
@@ -397,6 +399,24 @@ class Engine:
             return False  # only candles from today's session count
         return (bar.c - d["entry"]) * sign > 0
 
+    def entry_bar_stop(self, d: dict[str, Any]) -> float:
+        """The 2-2 family, hammer/shooter and 3-2: "Stop: one penny beyond the low (bullish) or high (bearish) of the
+        entry bar" (thestrat.ai) — read again at the moment of entry, wicks included. Others keep the plan's stop."""
+        if not d.get("entry_bar_stop"):
+            return d["stop"]
+        try:
+            src = session_source(self.chart_source, self.clock()) if d.get("source", "chart") == "chart" \
+                else session_source(self.perp_source or hl.candles, self.clock())
+            bars, _ = src(d["chart"] if d.get("source", "chart") == "chart" else d["coin"], d["tf"])
+            cur, b = bars[-1], float(d.get("basis") or 1)
+            if cur.synthetic:
+                return d["stop"]
+            if d["side"] == "long":
+                return max(d["stop"], cur.l * b - 0.01)
+            return min(d["stop"], cur.h * b + 0.01)
+        except Exception:  # noqa: BLE001 — the plan's stop (the setup bar's far side) still holds
+            return d["stop"]
+
     def enter(self, plan: dict[str, Any], d: dict[str, Any], px: float) -> int | None:
         if len(self.j.open_trades()) >= settings.max_open:
             return None
@@ -405,6 +425,7 @@ class Engine:
         try:
             equity = self.broker.equity(inst)
             lev = risk.leverage_for(inst.max_leverage)
+            d = {**d, "stop": self.entry_bar_stop(d)}
             d = {**d, "stop": risk.effective_stop(px, d["side"], d["stop"], inst.max_leverage)[0]}
             in_use = sum(t["entry"] * t["size"] / max(1, t["leverage"] or 1) for t in self.j.open_trades(mode=self.mode))
             size = risk.size_for(equity, px, d["stop"], inst.sz_decimals, lev, in_use)

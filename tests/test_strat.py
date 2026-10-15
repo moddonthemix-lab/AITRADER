@@ -16,7 +16,7 @@ def test_inside_bar_setup_has_trigger_stop_target_and_volume():
     setups = strat.find_setups("D", DAILY_INSIDE, types)
     long_ = next(s for s in setups if s.direction == "long")
     assert long_.name == "2U-1-2U continuation"
-    assert (long_.trigger, long_.stop, long_.target, long_.status) == (110, 106, 120, "waiting")
+    assert (long_.trigger, long_.stop, long_.target, long_.status) == (110, 106, 142, "waiting")  # measured move: leg 88→120 = 32, from 110
     assert long_.inside and long_.family == "2-1-2 continuation"
     assert long_.rvol == 1.0
 
