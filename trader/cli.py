@@ -69,14 +69,32 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         try:
             from .family.hub_client import HubClient
 
+            from .family.hub_client import HubClientError, HubOffline
+
             h = HubClient(timeout=5)
-            me = h.me()
-            line((me.get("member") or {}).get("id") == "trader",
-                 f"Family Hub at {os.environ.get('HUB_URL')}: connected as {(me.get('member') or {}).get('id')}")
-            b = h.budget()
-            line(True, f"Cloud budget this month: {json.dumps(b)[:160]}")
+            url = os.environ.get("HUB_URL")
+            try:
+                me = h.me()
+                who = (me.get("member") or {}).get("id")
+                line(who == "trader", f"Family Hub at {url}: connected as {who}"
+                     + ("" if who == "trader" else " — this token belongs to another member; make one for trader"))
+                try:
+                    b = h.budget()
+                    line(True, f"Cloud budget this month: ${b.get('remaining', '?')} left of ${b.get('budget', '?')}")
+                except HubClientError as e:
+                    line(None, f"Cloud budget: the hub said {e.status} ({e.message}) — is the hub up to date?")
+            except HubClientError as e:
+                hint = {401: "the hub doesn't accept this token. On the Chromebook run "
+                             "`python3 -m hub agent token trader` again and paste the NEW token into HUB_TOKEN "
+                             "(no spaces or quotes; each run replaces the old token).",
+                        403: "Trader is paused in the hub (Family panel) — unpause him.",
+                        404: "the hub doesn't know this address — check HUB_URL (http://192.168.1.208:8770)."
+                        }.get(e.status, "")
+                line(False, f"Family Hub at {url}: the hub said {e.status} ({e.message}). {hint}".strip())
+            except HubOffline as e:
+                line(False, f"Family Hub: can't reach {url} ({str(e)[-80:]}). Is the Chromebook on, same Wi-Fi?")
         except Exception as e:  # noqa: BLE001
-            line(False, f"Family Hub: can't connect ({type(e).__name__}). Check HUB_URL / HUB_TOKEN.")
+            line(False, f"Family Hub: unexpected problem ({type(e).__name__}).")
     else:
         line(None, "Family Hub: no HUB_TOKEN yet (make one on the Chromebook: python3 -m hub agent token trader)")
     # brains
