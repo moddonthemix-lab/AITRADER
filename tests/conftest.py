@@ -80,8 +80,9 @@ class FakeLiveBroker(Broker):
     def equity(self, inst=None):
         return 1000.0
 
-    def open(self, i, is_long, size):
+    def open(self, i, is_long, size, leverage=1):
         self.orders.append(("open", i.coin, is_long, size))
+        self.leverages = getattr(self, "leverages", []) + [leverage]
         self.sizes[i.coin] = size
         return Fill(self.prices[i.coin], size, 0.05, "1")
 

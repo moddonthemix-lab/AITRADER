@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS trades (
     inside INTEGER DEFAULT 0, with_continuity INTEGER, rvol REAL,
     entry REAL NOT NULL, size REAL NOT NULL,
     stop REAL NOT NULL, initial_stop REAL NOT NULL, hard_stop REAL NOT NULL, target REAL,
-    fees REAL DEFAULT 0,
+    fees REAL DEFAULT 0, leverage INTEGER DEFAULT 1,
     peak REAL, trail_active INTEGER DEFAULT 0,
     protection TEXT DEFAULT '{}',       -- exchange order ids (live)
     opened_at TEXT NOT NULL, closed_at TEXT,
@@ -91,6 +91,16 @@ class Journal:
         self.conn.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Columns added after a journal was first made (an existing journal keeps its data)."""
+        added = {"trades": {"leverage": "INTEGER DEFAULT 1"}}
+        for table, cols in added.items():
+            have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            for col, kind in cols.items():
+                if col not in have:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
 
     # ------------------------------------------------------------------ plumbing
     @contextmanager

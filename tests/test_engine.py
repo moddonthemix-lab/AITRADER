@@ -103,6 +103,10 @@ def test_live_plans_wait_for_the_boss(journal, wednesday):
     assert e.on_approved({"id": req["id"], "title": req["title"]})
     e.watch_plans(wednesday)
     assert broker.orders[0][:3] == ("open", "xyz:NVDA", True) and broker.stops  # stop placed on the exchange
+    from trader import risk
+
+    lev = risk.leverage_for(110.1, 106, 20)  # NVDA's max is 20x; a 3.7% stop brings it down so liquidation stays 2x away
+    assert 1 < lev < 20 and broker.leverages[-1] == lev and journal.open_trades()[0]["leverage"] == lev
     assert any(u[1] == "in_progress" and "Filled" in u[2] for u in hub.updates)
 
 

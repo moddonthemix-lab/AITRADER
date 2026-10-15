@@ -50,6 +50,14 @@ def _flag(key: str, default: str) -> bool:
     return _env(key, default).strip().lower() in ("1", "true", "yes", "on")
 
 
+MAX_LEVERAGE = 1000  # "max": no cap of our own, each market's maximum applies
+
+
+def _leverage(value: str) -> int:
+    v = value.strip().lower()
+    return MAX_LEVERAGE if v in ("max", "maximum", "") else max(1, int(float(v)))
+
+
 def _list(key: str, default: str) -> list[str]:
     return [x.strip() for x in _env(key, default).split(",") if x.strip()]
 
@@ -91,9 +99,14 @@ class Settings:
     priority: str = field(default_factory=lambda: _env("TRADER_PRIORITY", "inside"))
 
     # ---- sizing and risk
-    leverage: int = field(default_factory=lambda: int(_env("TRADER_LEVERAGE", "1")))
+    # "max" = each ticker's maximum leverage on Hyperliquid, lowered per trade only as far as needed to keep the
+    # liquidation price at least TRADER_LIQ_BUFFER times further away than the stop. Or a number, e.g. 5.
+    leverage: int = field(default_factory=lambda: _leverage(_env("TRADER_LEVERAGE", "max")))
+    liq_buffer: float = field(default_factory=lambda: float(_env("TRADER_LIQ_BUFFER", "2")))
+    # How much of the account Trader may trade with: the margin of all his open positions together never
+    # goes over this % of the account; the rest always stays free as a cushion.
+    account_use_pct: float = field(default_factory=lambda: float(_env("TRADER_ACCOUNT_USE_PCT", "75")))
     risk_per_trade_pct: float = field(default_factory=lambda: float(_env("TRADER_RISK_PER_TRADE_PCT", "2")))
-    max_position_pct: float = field(default_factory=lambda: float(_env("TRADER_MAX_POSITION_PCT", "30")))
     max_open: int = field(default_factory=lambda: int(_env("TRADER_MAX_OPEN", "3")))
     min_rr: float = field(default_factory=lambda: float(_env("TRADER_MIN_RR", "1.5")))
     # Fee per side, in percent of the trade's value. HIP-3 stock perps cost more than crypto perps;

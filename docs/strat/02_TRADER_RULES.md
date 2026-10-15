@@ -15,10 +15,16 @@ These are enforced in code. Trader explains them; he never bends them.
   the stop jumps to lock in a profit after fees and then follows the best price 1R behind. It never moves
   back and never drops below the locked profit — so once it's on, the trade can only close green.
 - **Fees count.** Every target, R:R and P&L number is after the fee on the way in and out.
-- **Sizing.** About 2% of the account at risk between entry and stop (`TRADER_RISK_PER_TRADE_PCT`), never
-  more than 30% of the account in one position (`TRADER_MAX_POSITION_PCT`), 1x leverage by default
-  (`TRADER_LEVERAGE`), at most 3 positions at once (`TRADER_MAX_OPEN`). Isolated margin: a loss stays in its
-  own trade.
+- **Hard stop on price.** The -10% is measured on the position's price (fees included), so it means the
+  same at any leverage.
+- **Leverage: the maximum each ticker allows** (`TRADER_LEVERAGE=max`), lowered for a trade only as far as
+  needed to keep Hyperliquid's liquidation price at least 2x further away than the stop
+  (`TRADER_LIQ_BUFFER`), so the stop always fires first. Isolated margin: a loss stays in its own trade.
+- **75% of the account to trade with** (`TRADER_ACCOUNT_USE_PCT`). The margin of all open positions together
+  never goes over 75% of the account; the other 25% always stays free.
+- **Sizing.** About 2% of the trading money at risk between entry and stop (`TRADER_RISK_PER_TRADE_PCT`).
+  Leverage doesn't change that dollar risk; it changes how little margin a position ties up. At most 3
+  positions at once (`TRADER_MAX_OPEN`).
 
 ## Activity rules
 

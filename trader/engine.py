@@ -293,8 +293,11 @@ class Engine:
         details = (f"{data['summary']}\n\nIf you approve (👍) before {expires.strftime('%a %H:%M')} New York time, I'll "
                    f"{'buy' if data['side'] == 'long' else 'sell short'} when price breaks the trigger, with a stop "
                    f"order on Hyperliquid right away, the take-profit at the target, and a trailing stop once in profit. "
-                   f"Most I can lose on it: {settings.hard_stop_pct:g}% of the position, fees included "
-                   f"(and about {settings.risk_per_trade_pct:g}% of the account at the planned stop). "
+                   f"Hard stop: never more than {settings.hard_stop_pct:g}% against the entry price, fees included. "
+                   f"Leverage: the market's maximum, lowered if needed so liquidation stays at least "
+                   f"{settings.liq_buffer:g}x further than the stop. At the stop I lose about "
+                   f"{settings.risk_per_trade_pct:g}% of my trading money ({settings.account_use_pct:g}% of the account; "
+                   f"the rest stays free). "
                    f"Not approved by then = no trade.\n\nThe read:\n{data['thesis'][:1500]}")
         try:
             self.hub.brain = "local"
@@ -401,23 +404,26 @@ class Engine:
         long_ = d["side"] == "long"
         try:
             equity = self.broker.equity(inst)
-            size = risk.size_for(equity, px, d["stop"], inst.sz_decimals, inst.max_leverage)
+            lev = risk.leverage_for(px, d["stop"], inst.max_leverage)
+            in_use = sum(t["entry"] * t["size"] / max(1, t["leverage"] or 1) for t in self.j.open_trades(mode=self.mode))
+            size = risk.size_for(equity, px, d["stop"], inst.sz_decimals, lev, in_use)
         except Exception as e:  # noqa: BLE001
             self.incident(self.clock().date(), f"couldn't size {d['coin']} ({type(e).__name__})")
             return None
         if size <= 0:
-            self.j.update("plans", plan["id"], {"status": "invalid", "note": "account too small for this setup",
+            self.j.update("plans", plan["id"], {"status": "invalid", "note": "no room: the account is too small, or "
+                                                          f"{settings.account_use_pct:g}% of it is already in use",
                                                 "updated_at": now_iso()})
             return None
         try:
-            fill = self.broker.open(inst, long_, size)
+            fill = self.broker.open(inst, long_, size, lev)
         except Exception as e:  # noqa: BLE001
             self.j.update("plans", plan["id"], {"status": "invalid", "note": f"order failed: {str(e)[:150]}",
                                                 "updated_at": now_iso()})
             self._task_update(plan["task_id"], "blocked", f"The order failed: {str(e)[:150]}")
             return None
         # Levels from the real fill: the hard stop is measured from what was actually paid.
-        hard = risk.hard_stop_price(fill.price, d["side"], min(settings.leverage, inst.max_leverage))
+        hard = risk.hard_stop_price(fill.price, d["side"])
         stop = max(d["stop"], hard) if long_ else min(d["stop"], hard)
         stop, hard = hl.round_px(stop, inst.sz_decimals), hl.round_px(hard, inst.sz_decimals)
         target = hl.round_px(d["target"], inst.sz_decimals)
@@ -437,10 +443,12 @@ class Engine:
             side=d["side"], setup=d["setup"], family=d["family"], tf=d["tf"], grade=d["grade"], inside=d["inside"],
             with_continuity=d["with_continuity"], rvol=d["rvol"], entry=fill.price, size=fill.size, stop=stop,
             initial_stop=stop, hard_stop=hard, target=target, fees=fill.fee, protection=ids, plan_id=plan["id"],
+            leverage=lev,
             thesis=d["thesis"], notes=d["summary"], opened_at=self.stamp())
         self.j.update("plans", plan["id"], {"status": "filled", "updated_at": now_iso()})
         self._task_update(plan["task_id"], "in_progress",
-                          f"Filled {fill.size:g} at {fill.price:g}. Stop {stop:g} on the exchange, target {target:g}.")
+                          f"Filled {fill.size:g} at {fill.price:g} with {lev}x leverage. Stop {stop:g} on the exchange, "
+                          f"target {target:g}.")
         log.info("opened %s %s %s @ %s", self.mode, d["side"], d["coin"], fill.price)
         return tid
 

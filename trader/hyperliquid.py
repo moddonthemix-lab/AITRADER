@@ -221,7 +221,7 @@ class Broker:
     def mid(self, coin: str) -> float:
         return mid(coin)
 
-    def open(self, inst: Instrument, is_long: bool, size: float) -> Fill:
+    def open(self, inst: Instrument, is_long: bool, size: float, leverage: int = 1) -> Fill:
         raise NotImplementedError
 
     def close(self, inst: Instrument, is_long: bool, size: float) -> Fill:
@@ -261,7 +261,7 @@ class PaperBroker(Broker):
         px = self.mid(inst.coin) * (1 + self.slippage if buy else 1 - self.slippage)
         return Fill(round(px, 6), size, round(px * size * settings.fee_pct / 100, 4))
 
-    def open(self, inst: Instrument, is_long: bool, size: float) -> Fill:
+    def open(self, inst: Instrument, is_long: bool, size: float, leverage: int = 1) -> Fill:
         return self._fill(inst, is_long, size)
 
     def close(self, inst: Instrument, is_long: bool, size: float) -> Fill:
@@ -344,12 +344,14 @@ class LiveBroker(Broker):
         if not isinstance(r, dict) or r.get("status") != "ok":
             raise RuntimeError(f"Hyperliquid refused: {str(r)[:200]}")
 
-    def _leverage(self, inst: Instrument) -> None:
-        if inst.coin in self._leverage_set:
+    def _leverage(self, inst: Instrument, leverage: int) -> None:
+        """Set this market's leverage (isolated margin: a loss stays inside its own trade)."""
+        lev = max(1, min(leverage, inst.max_leverage))
+        key = f"{inst.coin}:{lev}"
+        if key in self._leverage_set:
             return
-        lev = max(1, min(settings.leverage, inst.max_leverage))
-        self._check_ok(self.ex.update_leverage(lev, inst.coin, is_cross=False))  # isolated: a loss stays in its trade
-        self._leverage_set.add(inst.coin)
+        self._check_ok(self.ex.update_leverage(lev, inst.coin, is_cross=False))
+        self._leverage_set = {k for k in self._leverage_set if not k.startswith(inst.coin + ":")} | {key}
 
     def _market(self, inst: Instrument, is_buy: bool, size: float, reduce_only: bool) -> Fill:
         """A market order as an immediate-or-cancel limit, priced by the PERP rules. (The SDK's own market_open
@@ -365,8 +367,8 @@ class LiveBroker(Broker):
         fpx, sz = float(f["avgPx"]), float(f["totalSz"])
         return Fill(fpx, sz, round(fpx * sz * settings.fee_pct / 100, 4), str(f.get("oid")))
 
-    def open(self, inst: Instrument, is_long: bool, size: float) -> Fill:
-        self._leverage(inst)
+    def open(self, inst: Instrument, is_long: bool, size: float, leverage: int = 1) -> Fill:
+        self._leverage(inst, leverage)
         return self._market(inst, is_long, size, reduce_only=False)
 
     def close(self, inst: Instrument, is_long: bool, size: float) -> Fill:

@@ -137,12 +137,14 @@ All of these are settings in `.env` (see `.env.example`), enforced in code ([`tr
 
 | Rule | Setting | Default |
 |---|---|---|
-| Hard stop | `TRADER_HARD_STOP_PCT` | 10 (% of the position, fees in) |
+| Hard stop | `TRADER_HARD_STOP_PCT` | 10 (% against the entry price, fees in) |
 | Minimum trades per week | `TRADER_MIN_TRADES_WEEK` | 2 |
 | Inside bars first | `TRADER_PRIORITY` | inside |
 | Minimum reward:risk after fees | `TRADER_MIN_RR` | 1.5 |
 | Trailing stop | `TRADER_TRAIL_ACTIVATE_R` / `TRADER_TRAIL_R` | on at +1.5R, 1R behind |
-| Risk per trade / max position / leverage / max open | `TRADER_RISK_PER_TRADE_PCT` … | 2% / 30% / 1x / 3 |
+| Leverage | `TRADER_LEVERAGE` | max per ticker, lowered so liquidation stays ≥2x beyond the stop |
+| Account he may trade with | `TRADER_ACCOUNT_USE_PCT` | 75% (the rest stays free) |
+| Risk per trade / max open | `TRADER_RISK_PER_TRADE_PCT` / `TRADER_MAX_OPEN` | 2% / 3 |
 | Fees per side | `TRADER_FEE_PCT` | 0.09% |
 
 ## What a backtest showed (daily setups, fees in, cautious fills)

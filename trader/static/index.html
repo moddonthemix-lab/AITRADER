@@ -210,12 +210,12 @@ function render(s) {
   $("t-week").textContent = `${s.week_trades} of ${s.min_week}`;
   const st = s.stats; $("t-win").textContent = st.trades ? `${Math.round(st.win_rate * 100)}% · ${st.avg_r >= 0 ? "+" : ""}${st.avg_r}R` : "—";
   const r = s.rules;
-  $("rules").textContent = `Rules: hard stop −${r.hard_stop_pct}% (fees in) · take profit at the Strat target · trailing stop ${r.trail} · inside bars first · R:R ≥ ${r.min_rr} after ${r.fee_pct}%/side fees · ${r.risk_pct}% risk per trade · ${r.leverage}x · entries ${r.window}.`;
+  $("rules").textContent = `Rules: hard stop −${r.hard_stop_pct}% (fees in) · take profit at the Strat target · trailing stop ${r.trail} · inside bars first · R:R ≥ ${r.min_rr} after ${r.fee_pct}%/side fees · ${r.risk_pct}% risk per trade · leverage ${r.leverage === "max" ? "max per market (liquidation kept ≥2× beyond the stop)" : r.leverage + "x"} · entries ${r.window}.`;
   drawChart(s.pnl_series);
 
   $("positions").replaceChildren(table([
     ["", p => p.side === "long" ? "▲ long" : "▼ short"], ["Market", p => p.coin], ["Size", p => num(p.size)],
-    ["Entry", p => num(p.entry)], ["Now", p => num(p.price)], ["Stop", p => num(p.stop) + (p.trail_active ? " (trailing)" : "")],
+    ["Lev", p => (p.leverage || 1) + "x"], ["Entry", p => num(p.entry)], ["Now", p => num(p.price)], ["Stop", p => num(p.stop) + (p.trail_active ? " (trailing)" : "")],
     ["Target", p => num(p.target)], ["P&L", p => signed(p.unrealized)],
     ["", p => { const b = el("button", { className: "small" }, "Close"); b.onclick = () => closeTrade(p, b); return b; }],
   ], s.positions));

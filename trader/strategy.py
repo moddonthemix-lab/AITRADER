@@ -93,9 +93,11 @@ class Candidate:
         how = f"on a break {'above' if s.direction == 'long' else 'below'} {fmt(lv.entry)}" \
             if self.entry_type == "stop" else f"now near {fmt(lv.entry)} (just triggered)"
         vol = f", setup-bar volume x{s.rvol:g}" if s.rvol else ""
+        lev = risk.leverage_for(lv.entry, lv.stop, self.inst.max_leverage)
+        lev_txt = f", {lev}x leverage (max {self.inst.max_leverage}x)"
         return (f"{self.grade}-grade {s.direction} {self.inst.coin}: {strat.TF_NAMES[s.tf]} {s.name} {how}; "
                 f"stop {fmt(lv.stop)}, target {fmt(lv.target)} ({lv.target_kind}), hard stop {fmt(lv.hard_stop)}, "
-                f"R:R after fees {lv.rr:g}{', inside bar' if s.inside else ''}{vol}. Bias {self.bias}.")
+                f"R:R after fees {lv.rr:g}{lev_txt}{', inside bar' if s.inside else ''}{vol}. Bias {self.bias}.")
 
 
 @dataclass
@@ -193,8 +195,7 @@ def evaluate(r: Read, j: Journal, price: float | None = None) -> Read:
         if learning.benched(j, s.family, s.tf):
             continue
         b = r.basis or 1
-        lv = risk.levels(s.direction, entry * b, s.stop * b, None if s.target is None else s.target * b,
-                         min(settings.leverage, r.inst.max_leverage))
+        lv = risk.levels(s.direction, entry * b, s.stop * b, None if s.target is None else s.target * b)
         if lv.problem:
             problems[lv.problem] += 1
             continue

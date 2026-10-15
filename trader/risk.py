@@ -1,7 +1,12 @@
 """The money rules, as plain functions (no network, easy to test).
 
-Hard stop: a position is closed before it loses more than TRADER_HARD_STOP_PCT (10%) of the money in it,
-    fees included. The Strat stop (the other side of the setup bar) is used when it's tighter; a setup
+Hard stop: a position is closed before its price moves more than TRADER_HARD_STOP_PCT (10%) against it,
+    fees included — measured on price, so it means the same at any leverage.
+Account use: the margin of all open positions together stays within TRADER_ACCOUNT_USE_PCT (75%) of the
+    account; the other 25% is always a free cushion.
+Leverage: each market's maximum (TRADER_LEVERAGE=max), lowered per trade so liquidation stays at least
+    TRADER_LIQ_BUFFER (2x) further away than the stop. Leverage doesn't change the dollar risk (that's
+    TRADER_RISK_PER_TRADE_PCT); it changes how little margin each position ties up. The Strat stop (the other side of the setup bar) is used when it's tighter; a setup
     whose Strat stop is further away than the hard stop is skipped — its risk doesn't fit the rule.
 Take profit: at the Strat target (the previous range's high/low). With no prior level in the way (price
     discovery) the target is a measured move of 2R.
@@ -29,11 +34,32 @@ def fee() -> float:
     return settings.fee_pct / 100
 
 
-def hard_stop_price(entry: float, side: str, leverage: int | None = None) -> float:
-    """The furthest a stop may be: losing more than the hard-stop % of the margin (fees included) is impossible."""
-    lev = max(1, leverage or settings.leverage)
-    move = settings.hard_stop_pct / 100 / lev - 2 * fee()
+def hard_stop_price(entry: float, side: str) -> float:
+    """The furthest a stop may be: the position's price can't go more than the hard-stop % against it
+    (fees included). Measured on price, so it means the same at any leverage."""
+    move = settings.hard_stop_pct / 100 - 2 * fee()
     return entry * (1 - move) if side == "long" else entry * (1 + move)
+
+
+def maintenance(max_leverage: int) -> float:
+    """Hyperliquid's maintenance margin rate: half the initial margin at the market's maximum leverage."""
+    return 1 / (2 * max(1, max_leverage))
+
+
+def liquidation_distance(leverage: int, max_leverage: int) -> float:
+    """How far price can move against an isolated position at this leverage before it's liquidated."""
+    return 1 / max(1, leverage) - maintenance(max_leverage)
+
+
+def leverage_for(entry: float, stop: float, max_leverage: int) -> int:
+    """The market's maximum leverage (or TRADER_LEVERAGE), lowered only as far as needed so the liquidation
+    price is at least TRADER_LIQ_BUFFER times further away than the stop (fees included): the stop always
+    fires first."""
+    cap = max(1, min(settings.leverage, max_leverage))
+    stop_frac = abs(entry - stop) / entry + 2 * fee()
+    need = settings.liq_buffer * stop_frac + maintenance(max_leverage)
+    safe = int(1 / need) if need > 0 else cap
+    return max(1, min(cap, safe))
 
 
 def lock_price(entry: float, side: str) -> float:
@@ -66,8 +92,8 @@ class Levels:
     problem: str | None = None  # why it can't be traded (a market reason)
 
 
-def levels(side: str, entry: float, strat_stop: float, strat_target: float | None, leverage: int | None = None) -> Levels:
-    hard = hard_stop_price(entry, side, leverage)
+def levels(side: str, entry: float, strat_stop: float, strat_target: float | None) -> Levels:
+    hard = hard_stop_price(entry, side)
     beyond = strat_stop < hard if side == "long" else strat_stop > hard
     risk = abs(entry - strat_stop)
     kind = "strat"
@@ -86,15 +112,23 @@ def levels(side: str, entry: float, strat_stop: float, strat_target: float | Non
     return lv
 
 
-def size_for(equity: float, entry: float, stop: float, sz_decimals: int, max_leverage: int = 50) -> float:
-    """Position size: risk TRADER_RISK_PER_TRADE_PCT of the account between entry and stop (fees in),
-    never more than TRADER_MAX_POSITION_PCT of the account (times leverage) in one position."""
+def trading_capital(equity: float) -> float:
+    """The part of the account Trader trades with (TRADER_ACCOUNT_USE_PCT, 75%)."""
+    return equity * settings.account_use_pct / 100
+
+
+def size_for(equity: float, entry: float, stop: float, sz_decimals: int, leverage: int = 1,
+             margin_in_use: float = 0.0) -> float:
+    """Position size: risk TRADER_RISK_PER_TRADE_PCT of the trading capital between entry and stop (fees in),
+    and never more margin (value ÷ leverage) than what's still free of the 75% Trader may use, counting the
+    positions already open."""
     if equity <= 0 or entry <= 0:
         return 0.0
-    lev = max(1, min(settings.leverage, max_leverage))
+    lev = max(1, leverage)
+    capital = trading_capital(equity)
     per_unit = abs(entry - stop) + fee() * (entry + stop)
-    by_risk = equity * settings.risk_per_trade_pct / 100 / per_unit if per_unit > 0 else 0
-    by_cap = equity * settings.max_position_pct / 100 * lev / entry
+    by_risk = capital * settings.risk_per_trade_pct / 100 / per_unit if per_unit > 0 else 0
+    by_cap = max(0.0, capital - margin_in_use) * lev / entry
     size = round_size(min(by_risk, by_cap), sz_decimals)
     return size if size * entry >= MIN_ORDER_USD else 0.0
 
@@ -132,9 +166,8 @@ def manage(t: dict[str, Any], price: float, sz_decimals: int = 2) -> Step:
     moved = stop != t["stop"]
 
     reason = None
-    lev = max(1, settings.leverage)
-    loss_on_margin = -((price - entry) / entry * d * lev - 2 * fee() * lev)
-    if loss_on_margin >= settings.hard_stop_pct / 100 or (price - t["hard_stop"]) * d <= 0:
+    loss = -((price - entry) / entry * d - 2 * fee())  # on the position's price, fees in
+    if loss >= settings.hard_stop_pct / 100 or (price - t["hard_stop"]) * d <= 0:
         reason = "hard_stop"  # the boss's -10% rule, checked on the real loss — whatever the stop says
     elif t.get("target") is not None and (price - t["target"]) * d >= 0:
         reason = "target"

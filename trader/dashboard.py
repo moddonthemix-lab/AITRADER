@@ -72,7 +72,7 @@ class Dashboard:
         opened = []
         for t in j.open_trades(mode=mode):
             row = {k: t[k] for k in ("id", "coin", "side", "size", "entry", "stop", "target", "hard_stop", "setup",
-                                     "tf", "grade", "inside", "trail_active", "opened_at")}
+                                     "tf", "grade", "inside", "trail_active", "opened_at", "leverage")}
             try:
                 px = e.broker.mid(t["coin"])
                 d = 1 if t["side"] == "long" else -1
@@ -92,7 +92,7 @@ class Dashboard:
             "mode": mode, "equity": equity, "today_pnl": today_pnl, "total_pnl": j.realized_pnl(mode),
             "week_trades": j.trades_opened_since(week_start(today), mode), "min_week": settings.min_trades_week,
             "rules": {"hard_stop_pct": settings.hard_stop_pct, "min_rr": settings.min_rr, "fee_pct": settings.fee_pct,
-                      "risk_pct": settings.risk_per_trade_pct, "leverage": settings.leverage,
+                      "risk_pct": settings.risk_per_trade_pct, "leverage": "max" if settings.leverage >= 1000 else settings.leverage,
                       "trail": f"+{settings.trail_activate_r:g}R, {settings.trail_r:g}R behind"
                       if settings.trail_mode == "r" else f"+{settings.trail_activate_pct:g}%, {settings.trail_pct:g}% behind",
                       "window": f"{settings.window_start}–{settings.window_end} New York"},

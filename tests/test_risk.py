@@ -13,15 +13,12 @@ def trade(**kw):
     return t
 
 
-@pytest.mark.parametrize("lev", [1, 3])
-def test_hard_stop_loses_exactly_ten_percent_with_fees(lev):
+def test_hard_stop_is_ten_percent_of_the_price_with_fees():
     entry = 100.0
-    stop = risk.hard_stop_price(entry, "long", lev)
-    move = (stop - entry) / entry
-    loss_on_margin = -(move * lev - 2 * risk.fee() * lev)
-    assert loss_on_margin == pytest.approx(settings.hard_stop_pct / 100)
-    short = risk.hard_stop_price(entry, "short", lev)
-    assert short > entry
+    stop = risk.hard_stop_price(entry, "long")
+    loss = -((stop - entry) / entry - 2 * risk.fee())
+    assert loss == pytest.approx(settings.hard_stop_pct / 100)
+    assert risk.hard_stop_price(entry, "short") > entry
 
 
 def test_hard_stop_fires_on_the_real_loss_even_past_the_stop():
@@ -71,12 +68,37 @@ def test_levels_reject_stops_wider_than_the_hard_stop_and_thin_targets():
     assert measured.target == 108 and measured.target_kind == "measured"
 
 
-def test_position_size_respects_risk_and_cap():
-    size = risk.size_for(1000, 100, 96, 3)
+def test_position_size_uses_75_percent_of_the_account():
+    capital = 1000 * settings.account_use_pct / 100
+    size = risk.size_for(1000, 100, 96, 3, leverage=20)
     risk_usd = size * (4 + risk.fee() * 196)
-    assert risk_usd <= 1000 * settings.risk_per_trade_pct / 100 + 0.01
-    assert size * 100 <= 1000 * settings.max_position_pct / 100 + 0.01
+    assert risk_usd == pytest.approx(capital * settings.risk_per_trade_pct / 100, rel=0.01)  # leverage doesn't change risk
+    tight = risk.size_for(1000, 100, 99.9, 3, leverage=1)  # a very tight stop at 1x: all 75% as margin, no more
+    assert tight * 100 == pytest.approx(capital, rel=0.01)
+    assert risk.size_for(1000, 100, 99.9, 3, leverage=1, margin_in_use=capital) == 0  # 75% already in use
+    half = risk.size_for(1000, 100, 99.9, 3, leverage=1, margin_in_use=capital / 2)
+    assert half * 100 == pytest.approx(capital / 2, rel=0.01)
     assert risk.size_for(20, 100, 96, 3) == 0  # below Hyperliquid's $10 minimum
+
+
+def test_max_leverage_but_liquidation_always_beyond_the_stop():
+    # 2% stop on a 20x market: 20x liquidates ~2.5% away — not 2x beyond the stop+fees (4.4%), so lowered to 14x
+    lev = risk.leverage_for(100, 98, 20)
+    assert lev == 14
+    assert risk.liquidation_distance(lev, 20) >= settings.liq_buffer * (0.02 + 2 * risk.fee())
+    assert risk.liquidation_distance(20, 20) < settings.liq_buffer * (0.02 + 2 * risk.fee())
+    # a 1% stop on the same market can use the full 20x (liquidation 2.5% away vs 2x 1.18%)
+    assert risk.leverage_for(100, 99, 20) == 20
+    assert risk.liquidation_distance(20, 20) >= settings.liq_buffer * (0.002 + 2 * risk.fee())
+    # a wide stop falls back toward 1x, never below
+    assert risk.leverage_for(100, 91, 50) >= 1
+    # a fixed number caps it
+    old = settings.leverage
+    settings.leverage = 3
+    try:
+        assert risk.leverage_for(100, 99.8, 20) == 3
+    finally:
+        settings.leverage = old
 
 
 def test_weekly_pace():
