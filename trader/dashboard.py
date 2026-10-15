@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from . import backtest, learning, strat, strategy
+from . import backtest, learning, prep, strat, strategy
 from .config import settings
 from .journal import NY, ny_today, week_start
 from .knowledge import BUILTIN, DOC_EXT, MAX_FILE_BYTES, library
@@ -104,6 +104,7 @@ class Dashboard:
             "lessons": learning.recent_lessons(j, 8),
             "passes": j.passes_on(today), "incidents": j.incidents_on(today),
             "scan": self._last_scan,
+            "gameplan": prep.latest(j),
             "docs": self.docs(),
             "as_of": datetime.now(NY).isoformat(timespec="seconds"),
         }
@@ -174,6 +175,13 @@ class Dashboard:
                            "pass": {"reason": ps[0], "detail": ps[1]} if ps else None,
                            "incidents": sc.incidents}
         return self._last_scan
+
+    def prep(self) -> dict[str, Any]:
+        """Make the game plan now (as of this moment: after the close, before the open, or mid-session)."""
+        e = self.engine
+        plan = prep.build(e.universe(), datetime.now(NY), e.chart_source)
+        prep.save(e.j, plan)
+        return plan
 
     def read(self, ticker: str) -> dict[str, Any]:
         from .cli import _chart
@@ -274,6 +282,8 @@ def make_handler(dash: Dashboard) -> type[BaseHTTPRequestHandler]:
                     return self._send(200, dash.upload(self.headers.get("X-Filename", ""), self.rfile.read(n)))
                 if method == "DELETE" and path == "/api/docs":
                     return self._send(200, dash.delete_doc(q.get("name", "")))
+                if method == "POST" and path == "/api/prep":
+                    return self._send(200, dash.prep())
                 if method == "POST" and path == "/api/scan":
                     return self._send(200, dash.scan())
                 if method == "POST" and path == "/api/backtest":

@@ -165,6 +165,18 @@ def candles(coin: str, tf: str) -> tuple[list[Bar], dict[str, Any]]:
     return bars, {"shortName": coin, "source": "hyperliquid"}
 
 
+def last_closed_candle(coin: str, now_ms: int | None = None, interval: str = "5m") -> Bar | None:
+    """The most recent FINISHED candle of the perp itself (5-minute by default) — the entry confirmation."""
+    now_ms = now_ms or int(time.time() * 1000)
+    rows = _info({"type": "candleSnapshot", "req": {"coin": coin, "interval": interval,
+                                                    "startTime": now_ms - 3_600_000, "endTime": now_ms}})
+    done = [r for r in rows or [] if int(r["T"]) < now_ms]
+    if not done:
+        return None
+    r = done[-1]
+    return Bar(int(r["t"]) // 1000, float(r["o"]), float(r["h"]), float(r["l"]), float(r["c"]), float(r.get("v") or 0))
+
+
 def base_fee_pct(user: str) -> float | None:
     """This account's base taker fee per side, in percent (shown by `trader doctor`; HIP-3 stock markets add
     their own fee on top, which is why TRADER_FEE_PCT defaults to a safe 0.09%)."""

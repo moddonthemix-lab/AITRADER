@@ -2,6 +2,7 @@ import os
 import tempfile
 
 os.environ["TRADER_ENV_FILE"] = "/nonexistent"
+os.environ["TRADER_ENTRY_CONFIRM"] = "touch"  # most tests move the price; test_entries.py covers the 5-minute close
 _tmp = tempfile.mkdtemp(prefix="trader-test-")
 os.environ["TRADER_HOME"] = _tmp
 os.environ["TRADER_STRAT_DOCS_DIR"] = os.path.join(_tmp, "docs")  # never the boss's real folder

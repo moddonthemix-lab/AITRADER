@@ -104,6 +104,12 @@ ul.list { list-style: none; padding: 0; margin: 0; } ul.list li { padding: 7px 0
   </div>
 
   <section class="card">
+    <h2>📋 Game plan: inside bars for the next session <span class="spacer"></span><button id="prepBtn">Make it now</button></h2>
+    <div class="muted small">Made after the close (16:10) and again before the open (9:00), New York time. Entries 9:40–15:45, on a 5-minute close beyond the trigger, only with continuity at that moment.</div>
+    <div id="gameplan"></div>
+  </section>
+
+  <section class="card">
     <h2>The scan <span class="spacer"></span><button id="scanBtn" class="primary">Scan now</button></h2>
     <div class="muted small">Read-only: it shows what's setting up, or the market reason to pass. It never places a trade.</div>
     <div id="scan"></div>
@@ -219,6 +225,7 @@ function render(s) {
        el("div", { className: "muted small" }, "expires " + fmtTime(p.expires_at))))) : el("div", { className: "muted small" }, "No plans right now."));
 
   renderScan(s.scan);
+  renderPlan(s.gameplan);
   renderDocs(s.docs);
 
   $("edges").replaceChildren(table([["TF", e => e.tf], ["Pattern", e => e.family], ["Edge", e => (e.edge_r >= 0 ? "+" : "") + e.edge_r + "R"],
@@ -241,6 +248,27 @@ function renderScan(sc) {
   sc.incidents.forEach(i => kids.push(el("div", { className: "small muted", style: "margin-top:6px" }, "Incident (not a pass): " + i)));
   $("scan").replaceChildren(...kids);
 }
+
+function renderPlan(p) {
+  if (!p) { $("gameplan").replaceChildren(el("div", { className: "muted small", style: "margin-top:8px" }, "No game plan yet — it's made after today's close, or press “Make it now”.")); return; }
+  const day = new Date(p.session + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const kids = [el("div", { className: "small", style: "margin:8px 0" }, `For ${day} · made ${p.kind} (${fmtTime(p.made_at)}) · ${p.inside.length} inside bar${p.inside.length === 1 ? "" : "s"} across ${p.markets} markets`)];
+  if (!p.inside.length) kids.push(el("div", { className: "muted small" }, "No inside bars formed. The 9:30 scan still looks for every other Strat setup."));
+  else kids.push(table([
+    ["Market", r => r.coin], ["TF", r => r.tf], ["Pattern", r => r.pattern], ["Higher TFs", r => r.higher_tfs],
+    ["Long above", r => side(r, "long")], ["Short below", r => side(r, "short")],
+  ], p.inside));
+  if (p.problems.length) kids.push(el("div", { className: "small muted", style: "margin-top:6px" }, `Couldn't read ${p.problems.length} market(s) — an incident, not a reason to pass.`));
+  $("gameplan").replaceChildren(...kids);
+}
+function side(r, d) {
+  const s = r.sides[d]; if (!s) return "—";
+  const wrap = el("span", {}, `${num(s.trigger)} → ${num(s.target)} · stop ${num(s.stop)}`);
+  if (r.favoured === d) wrap.append(el("span", { className: "chip", style: "margin-left:6px" }, "favoured"));
+  if (!s.ok) wrap.append(el("span", { className: "muted" }, ` (skip: ${s.problem.replaceAll("_", " ")})`));
+  return wrap;
+}
+$("prepBtn").onclick = () => busy($("prepBtn"), async () => { renderPlan(await api("/api/prep", { method: "POST" })); });
 
 function renderDocs(docs) {
   $("docs").replaceChildren(...docs.map(d => {

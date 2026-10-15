@@ -115,9 +115,20 @@ class Settings:
     # (as a fraction of the planned risk).
     max_chase_r: float = field(default_factory=lambda: float(_env("TRADER_MAX_CHASE_R", "0.25")))
 
-    # ---- when Trader looks for entries (New York time, weekdays): the US cash session
-    window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:45"))
+    # ---- the trading day (New York time, weekdays)
+    # Scanning starts at the open; entries from 9:40 (the second 5-minute candle has closed) until 15:45.
+    scan_start: str = field(default_factory=lambda: _env("TRADER_SCAN_START", "09:30"))
+    window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:40"))
     window_end: str = field(default_factory=lambda: _env("TRADER_WINDOW_END", "15:45"))
+    # Entry: the Strat trigger (break of the setup bar), confirmed by a 5-minute candle CLOSING beyond it.
+    # "touch" = enter on the first print through the trigger.
+    entry_confirm: str = field(default_factory=lambda: _env("TRADER_ENTRY_CONFIRM", "5m").strip().lower())
+    # Before arming a plan, check it against the boss's Strat documents (when there are any): a setup the
+    # documents rule out is skipped, with the document's reason.
+    doc_check: bool = field(default_factory=lambda: _flag("TRADER_DOC_CHECK", "1"))
+    # The game plan: inside bars ready for the next session, after the close and again before the open.
+    prep_after_close: str = field(default_factory=lambda: _env("TRADER_PREP_AFTER_CLOSE", "16:10"))
+    prep_pre_market: str = field(default_factory=lambda: _env("TRADER_PREP_PRE_MARKET", "09:00"))
     scan_minutes: int = field(default_factory=lambda: int(_env("TRADER_SCAN_MINUTES", "15")))
     report_time: str = field(default_factory=lambda: _env("TRADER_REPORT_TIME", "16:30"))
 

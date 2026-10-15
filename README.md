@@ -16,7 +16,8 @@ the budget you set, or the local model. His journal lives in `#trades`.
 | **Reads the markets** | Every liquid stock/index perp on Hyperliquid's stock markets (`xyz`, `mkts`, `km`, `cash`, `flx`), most liquid market per ticker. The Strat on Quarterly → 60-minute: 1 / 2U / 2D / 3, full timeframe continuity, setups, targets. Volume on every bar. |
 | **Inside bars first** | 3-1-2, 2-1-2, 1-1-2 rank above every other setup. Volume is a tie-breaker, never the reason. |
 | **Grades** | A = full timeframe continuity + R:R ≥ 1.5 after fees. B = leaning continuity (only when behind on the weekly minimum). C = never. |
-| **Enters** | On the break of the setup bar, during the US session (9:45–15:45 New York). No chasing. |
+| **Game plan** | After the close (16:10) and before the open (9:00): the inside bars ready for the next session, both triggers, stops, targets and the favoured side. Posted in `#trades` and on the dashboard. |
+| **Enters** | On the Strat trigger, confirmed by a **5-minute candle closing beyond it**. Scanning from 9:30, entries 9:40–15:45 New York. Checked against your Strat documents first. No chasing. |
 | **Exits** | **Hard stop -10%** (fees in, also a stop order on the exchange). **Take profit** at the Strat target. **Trailing stop** from +1.5R that locks a profit after fees and only moves forward. |
 | **Minimum 2 trades/week** | Behind pace → B-grade setups are allowed. C-grade setups are never forced. |
 | **Pass discipline** | No trade = a *market* reason (chop, conflicting timeframes, no setup in the window…). A data problem is an *incident*, reported separately, never a pass. |
@@ -99,6 +100,7 @@ round trip. Then set `TRADER_MODE=live`.
 ## Everyday commands
 
 ```bash
+trader prep                # the game plan: inside bars for the next session (also automatic at 16:10 and 9:00)
 trader scan                # what's setting up right now, or the market reason to pass (places nothing)
 trader read NVDA           # the full Strat read for a ticker
 trader backtest NVDA SPY   # replay history with Trader's rules (--weekly, --from 2023-01-01)

@@ -4,6 +4,7 @@
     trader run                    start Trader: the hub connection, the trading loop and the dashboard
     trader dash                   only the dashboard (http://localhost:8767): documents, backtests, journal
     trader markets                the stock markets Trader would scan right now (liquid ones only)
+    trader prep                   the game plan: inside bars ready for the next session (auto at 16:10 and 9:00)
     trader scan                   one scan: ranked setups, or the market reason to pass (no orders)
     trader read NVDA              The Strat read for a ticker
     trader backtest NVDA TSLA     replay history with Trader's rules (--weekly, --from 2023-01-01)
@@ -17,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import logging
 import os
@@ -270,6 +272,18 @@ def cmd_backtest(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prep(_: argparse.Namespace) -> int:
+    """Make the game plan now: the inside bars for the next session (it also runs by itself at 16:10 and 9:00)."""
+    from . import prep
+    from .journal import NY
+
+    e = make_engine(hub=None)
+    plan = prep.build(e.universe(), datetime.now(NY), e.chart_source)
+    prep.save(e.j, plan)
+    print(prep.text(plan, limit=40))
+    return 0
+
+
 def cmd_positions(_: argparse.Namespace) -> int:
     from .journal import Journal
 
@@ -412,7 +426,7 @@ def cmd_docs(a: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="trader", description="Trader — The Strat on Hyperliquid's stock markets")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("doctor", cmd_doctor), ("run", cmd_run), ("dash", cmd_dash), ("markets", cmd_markets), ("scan", cmd_scan),
+    for name, fn in (("doctor", cmd_doctor), ("run", cmd_run), ("dash", cmd_dash), ("markets", cmd_markets), ("scan", cmd_scan), ("prep", cmd_prep),
                      ("positions", cmd_positions), ("stats", cmd_stats), ("lessons", cmd_lessons)):
         sub.add_parser(name).set_defaults(fn=fn)
     s = sub.add_parser("read")

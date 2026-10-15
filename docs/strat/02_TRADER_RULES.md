@@ -28,7 +28,8 @@ These are enforced in code. Trader explains them; he never bends them.
 - **Pass discipline.** A day without a trade needs a **market** reason:
   - *chop* — inside/outside bars on the setup timeframes and no continuity
   - *conflicting MTF* — the timeframes disagree; no continuity behind any setup
-  - *no setup in window* — nothing actionable formed during the US session window (9:45–15:45 New York)
+  - *no setup in window* — nothing actionable formed during the US session (scanning from 9:30, entries 9:40–15:45 New York, on a 5-minute close beyond
+    the trigger)
   - also: the targets don't pay enough after fees; the Strat stop is wider than the hard stop; it already
     ran past the trigger (no chasing)
   - **Not** a data-feed reason. If market data fails, Trader retries, switches to Hyperliquid's own candles,

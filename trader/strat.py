@@ -97,6 +97,7 @@ class Timeframe:
     sequence: list[str]          # last few completed scenarios, oldest first
     shape: str | None            # hammer/shooter on the last completed bar
     setups: list[Setup] = field(default_factory=list)
+    waiting: bool = False        # the next bar hasn't opened yet (before the open / after the close)
 
     @property
     def up(self) -> bool:
@@ -104,6 +105,8 @@ class Timeframe:
 
     @property
     def arrow(self) -> str:
+        if self.waiting:
+            return "…"  # next bar not open yet
         return "▲" if self.price > self.open else "▼" if self.price < self.open else "="
 
 
@@ -202,11 +205,14 @@ def analyze_tf(tf: str, bars: list[Bar]) -> Timeframe:
         shape=candle_shape(prev),
     )
     t.setups = find_setups(tf, bars, types)
+    t.waiting = bars[-1].synthetic
     return t
 
 
 def bias_of(frames: dict[str, Timeframe]) -> tuple[str, str, str | None, list[str], list[str]]:
-    """(bias, why, ftfc, ups, downs) from each timeframe's price vs its open."""
+    """(bias, why, ftfc, ups, downs) from each timeframe's price vs its open. A timeframe whose next bar
+    hasn't opened yet has no direction yet, so it doesn't count (it's decided at the open)."""
+    frames = {tf: f for tf, f in frames.items() if not f.waiting} or frames
     ups = [tf for tf, f in frames.items() if f.price > f.open]
     downs = [tf for tf, f in frames.items() if f.price < f.open]
     ftfc = "up" if len(ups) == len(frames) else "down" if len(downs) == len(frames) else None
@@ -325,6 +331,10 @@ def thesis(a: dict[str, Any]) -> str:
     for tf in (t for t in ("M",) + SETUP_TFS if t in frames):
         f = frames[tf]
         seq = "-".join(f.sequence[-3:] + [f"[{f.type}]"])
+        if f.waiting:
+            lines.append(f"{TF_NAMES[tf]}: {'-'.join(f.sequence[-4:])} — last bar complete "
+                         f"({fmt(f.prev_low)}–{fmt(f.prev_high)}); the next one hasn't opened yet.")
+            continue
         where = ("inside last bar's range" if f.type == "1" else
                  "broke last bar's HIGH" if f.type == "2U" else
                  "broke last bar's LOW" if f.type == "2D" else "broke BOTH sides (outside bar)")

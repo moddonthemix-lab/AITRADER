@@ -22,13 +22,14 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable
 
 from . import hyperliquid as hl
-from . import learning, risk, strat, strategy
+from . import learning, prep, risk, strat, strategy
 from .brain import Brain, system
 from .config import settings
 from .hyperliquid import Broker, Instrument
 from .journal import NY, Journal, now_iso, ny_now, week_start
 from .knowledge import library
-from .market import DataFeedError
+from .market import Bar, DataFeedError
+from .session import session_source
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +43,13 @@ def _hm(s: str) -> dtime:
 
 
 def in_window(now: datetime) -> bool:
+    """Scanning hours: from the open (9:30) to the last entry time (15:45), weekdays."""
+    now = now.astimezone(NY)
+    return now.weekday() < 5 and _hm(settings.scan_start) <= now.time() <= _hm(settings.window_end)
+
+
+def entries_open(now: datetime) -> bool:
+    """Entry hours: 9:40 (the second 5-minute candle has closed) to 15:45, weekdays."""
     now = now.astimezone(NY)
     return now.weekday() < 5 and _hm(settings.window_start) <= now.time() <= _hm(settings.window_end)
 
@@ -69,7 +77,7 @@ class Engine:
     def __init__(self, journal: Journal, broker: Broker, hub: Any = None, brain: Brain | None = None,
                  instruments: Callable[[], list[Instrument]] | None = None,
                  chart_source: Callable | None = None, perp_source: Callable | None = None,
-                 clock: Callable[[], datetime] = ny_now):
+                 clock: Callable[[], datetime] = ny_now, confirm_source: Callable | None = None):
         self.j = journal
         self.broker = broker
         self.hub = hub
@@ -78,6 +86,9 @@ class Engine:
         self.chart_source = chart_source
         self.perp_source = perp_source
         self.clock = clock
+        # (coin, now) -> the last finished 5-minute candle of the perp (the entry confirmation)
+        self.confirm_source = confirm_source or (lambda coin, now: hl.last_closed_candle(
+            coin, int(now.timestamp() * 1000)))
         self.memories: list[dict[str, Any]] = []
         self._universe: tuple[float, list[Instrument]] = (0.0, [])
         self.last_scan: strategy.Scan | None = None
@@ -110,13 +121,37 @@ class Engine:
         now = self.clock()
         self.manage_positions()
         self.expire_plans(now)
+        kind = prep.due(now, self.j)
+        if kind:
+            self.game_plan(now, kind)
         if in_window(now):
             last = self.j.get("last_scan_at")
             if not last or (now - datetime.fromisoformat(last)).total_seconds() >= settings.scan_minutes * 60 - 5:
                 self.scan(now)
                 self.j.set("last_scan_at", now.isoformat())
-            self.watch_plans(now)
+            if entries_open(now):
+                self.watch_plans(now)
         self.maybe_report(now)
+
+    # ------------------------------------------------------------------ the game plan (before the open / after the close)
+    def game_plan(self, now: datetime | None = None, kind: str | None = None) -> dict[str, Any]:
+        now = now or self.clock()
+        try:
+            instruments = self.universe()
+        except DataFeedError as e:
+            self.incident(now.date(), f"couldn't list Hyperliquid's markets for the game plan: {e}")
+            instruments = []
+        plan = prep.build(instruments, now, self.chart_source, kind)
+        prep.save(self.j, plan)
+        for what in plan["problems"][:5]:
+            self.incident(now.date(), what)
+        if self.hub is not None:
+            try:
+                self.hub.brain = "local"
+                self.hub.post_finding("trades", prep.text(plan), "reported", 1.0)
+            except Exception as e:  # noqa: BLE001 — the outbox keeps it when the hub is away
+                log.info("hub: couldn't post the game plan (%s)", type(e).__name__)
+        return plan
 
     # ------------------------------------------------------------------ scanning and planning
     def trades_this_week(self, now: datetime | None = None) -> int:
@@ -140,7 +175,8 @@ class Engine:
             sc = strategy.Scan([], [], ("A",), False)
             self.last_scan = sc
             return sc
-        sc = strategy.scan(instruments, self.j, today, self.trades_this_week(now), self.chart_source, self.perp_source)
+        sc = strategy.scan(instruments, self.j, today, self.trades_this_week(now),
+                           session_source(self.chart_source, now), self.perp_source)
         self.last_scan = sc
         key = f"scans:{today.isoformat()}"
         self.j.set(key, str(int(self.j.get(key, "0") or 0) + 1))
@@ -155,14 +191,51 @@ class Engine:
                 break
             if c.inst.coin in taken:
                 continue
-            self.make_plan(c, now)
             taken.add(c.inst.coin)
+            ok, why = self.check_documents(c, today)
+            if not ok:
+                self.record_pass(today, "playbook", f"{c.inst.ticker} {strat.TF_NAMES[c.setup.tf]} {c.setup.name}: {why}")
+                continue
+            self.make_plan(c, now)
             planned += 1
         if not sc.tradeable:
             ps = sc.pass_summary()
             if ps:
                 self.record_pass(today, *ps)
         return sc
+
+    def check_documents(self, c: strategy.Candidate, day: date) -> tuple[bool, str]:
+        """Does the boss's Strat documents rule this setup out? Only the boss's own files are consulted (the
+        built-in playbook IS the code). Once per setup per day; no brain or a vague answer = the rules decide."""
+        if not settings.doc_check:
+            return True, ""
+        lib = library()
+        lib.refresh()
+        theirs = [p for p in lib.pieces if not str(p["file"]).startswith(("01_THE_STRAT_PLAYBOOK", "02_TRADER_RULES"))]
+        if not theirs:
+            return True, ""
+        key = f"doccheck:{day.isoformat()}:{c.inst.coin}:{c.setup.tf}:{c.setup.name}:{c.setup.trigger}"
+        cached = self.j.get(key)
+        if cached is not None:
+            return cached == "TAKE", self.j.get(key + ":why") or ""
+        docs = lib.context(f"{c.setup.name} {c.setup.family} entry {c.setup.direction} inside bar continuity "
+                           f"{strat.TF_NAMES[c.setup.tf]} rules", k=4)
+        prompt = (f"Check this planned trade against the boss's Strat documents below.\n\nPlan: {c.summary()}\n\n"
+                  f"The read:\n{c.thesis[:1500]}\n\nFrom the documents:\n{docs}\n\n"
+                  "Reply on the FIRST line with exactly TAKE or SKIP. Say SKIP only if the documents clearly rule "
+                  "this setup out right now; then on the second line quote the rule in under 25 words. "
+                  "If the documents don't address it, say TAKE.")
+        th = self.brain.think(prompt, job="research", system_prompt=system(learning.recent_lessons(self.j),
+                                                                            self.memories))
+        verdict, why = "TAKE", ""
+        if th is not None and th.text and not th.refused and th.brain != "wait":
+            lines = [x.strip() for x in th.text.strip().splitlines() if x.strip()]
+            if lines and lines[0].upper().startswith("SKIP"):
+                verdict = "SKIP"
+                why = (lines[1] if len(lines) > 1 else lines[0][4:].strip(" :-—")) or "the documents rule it out"
+        self.j.set(key, verdict)
+        self.j.set(key + ":why", why[:200])
+        return verdict == "TAKE", why[:200]
 
     def record_pass(self, day: date, reason: str, detail: str) -> None:
         strategy.validate_pass(reason, detail)  # the boss's pass discipline: market reasons only
@@ -295,7 +368,7 @@ class Engine:
                                                  "updated_at": now_iso()})
                 self._task_update(p["task_id"], "done", f"Cancelled: price hit the stop side ({px:g}) before the trigger.")
                 continue
-            triggered = d["entry_type"] == "market" or (px - d["entry"]) * sign >= 0
+            triggered = self.confirmed(d, now, px, sign)
             chase = settings.max_chase_r * abs(d["entry"] - d["stop"])
             if triggered and (px - d["entry"]) * sign <= chase:
                 self.enter(p, d, px)
@@ -303,6 +376,23 @@ class Engine:
                 self.j.update("plans", p["id"], {"status": "invalid", "note": f"ran past the trigger ({px:g}) — no chase",
                                                  "updated_at": now_iso()})
                 self._task_update(p["task_id"], "done", f"Skipped: it ran past the trigger ({px:g}). No chasing.")
+
+    def confirmed(self, d: dict[str, Any], now: datetime, px: float, sign: int) -> bool:
+        """The Strat trigger, confirmed: a finished 5-minute candle CLOSED beyond the trigger during today's
+        session (TRADER_ENTRY_CONFIRM=5m). With "touch", the first print through the trigger is enough."""
+        if settings.entry_confirm != "5m":
+            return d["entry_type"] == "market" or (px - d["entry"]) * sign >= 0
+        try:
+            bar: Bar | None = self.confirm_source(d["coin"], now)
+        except Exception as e:  # noqa: BLE001
+            self.incident(now.date(), f"no 5-minute candle for {d['coin']} ({type(e).__name__})")
+            return False
+        if bar is None:
+            return False
+        opened = datetime.fromtimestamp(bar.t, NY)
+        if opened.date() != now.astimezone(NY).date() or opened.time() < _hm(settings.scan_start):
+            return False  # only candles from today's session count
+        return (bar.c - d["entry"]) * sign > 0
 
     def enter(self, plan: dict[str, Any], d: dict[str, Any], px: float) -> int | None:
         if len(self.j.open_trades()) >= settings.max_open:

@@ -59,6 +59,28 @@ range — the nearest prior high (long) or low (short) beyond the trigger.
 5. **Bigger timeframe wins ties** (Weekly over Daily over 4-hour). Monthly setups are watched for
    context but are too wide for the -10% hard stop.
 
+## Entries: when and how
+
+- **The trigger is the Strat trigger:** the break of the setup bar's high (long) or low (short).
+- **Confirmation: a 5-minute close.** A poke through the trigger is not an entry. Trader enters only when a
+  5-minute candle (on the market he trades) **closes beyond the trigger**. A wick through that closes back
+  inside is ignored.
+- **Entry hours: 9:40–15:45 New York.** The scan starts at the 9:30 open, but the first entry can only come
+  at 9:40, when the second 5-minute candle closes. No new entries after 15:45.
+- **The opposite side first cancels it.** If price breaks the stop side before the trigger confirms, the
+  plan is cancelled. That's a different setup now.
+- **Your documents have a say.** Before a plan is armed, Trader checks it against the Strat documents you
+  uploaded. If they rule the setup out, he skips it and quotes the rule.
+
+## The game plan (before the open and after the close)
+
+- **After the close (16:10):** the day's bars are finished. Trader lists the inside bars that just formed
+  (daily, 4-hour, and weekly once the week is done), with both triggers, the stops, the targets, and the side
+  the higher timeframes (Q, M, W) favour.
+- **Before the open (9:00):** the same read again, fresh for the bell.
+- A timeframe whose next bar hasn't opened yet has no direction yet. Its continuity is decided at the open,
+  and the trade is taken only if continuity agrees at the moment of the 5-minute confirmation.
+
 ## Don't chase
 
 A setup that already triggered is only taken while price is within a quarter of the planned risk past the

@@ -38,6 +38,7 @@ NOT_TICKERS = {"I", "A", "AN", "THE", "AND", "OR", "TO", "OF", "ON", "IN", "IS",
                "LIVE", "PNL", "P", "L", "R", "RR", "OK", "FTFC", "MTF", "TP", "SL", "US", "USD", "AI", "ATH", "EOD",
                "W", "D", "M", "Q", "H", "AM", "PM", "NY", "TF", "IB", "DO", "IF", "BE", "SO", "UP", "NO", "ALL", "ANY"}
 BACKTEST_RE = re.compile(r"\bback-?test", re.I)
+PLAN_WORDS_RE = re.compile(r"\b(?:game ?plan|tomorrow|pre-?market|watchlist for|inside bars? (?:for|tomorrow|today))\b", re.I)
 SCAN_RE = re.compile(r"\b(?:scan|what'?s setting up|any setups?|best setups?|watchlist)\b", re.I)
 STATS_RE = re.compile(r"\b(?:stats|statistics|performance|win ?rate|how (?:are|is) (?:you|trading) doing|edge)\b", re.I)
 REPORT_RE = re.compile(r"\b(?:report|journal|p&?l|pnl)\b", re.I)
@@ -278,6 +279,11 @@ class Connector:
                 backtest.learn(self.engine.j, res)
                 parts.append(backtest.text(res))
             return "\n\n".join(parts) + "\n\nSaved to my learning (pattern edges updated).", [], "local"
+        if PLAN_WORDS_RE.search(text):
+            from . import prep
+
+            plan = prep.latest(self.engine.j) or self.engine.game_plan()
+            return prep.text(plan, limit=20), [], "local"
         if SCAN_RE.search(text):
             sc = self.engine.scan()
             lines = [c.summary() for c in sc.ranked[:5]] or ["Nothing qualifies right now."]

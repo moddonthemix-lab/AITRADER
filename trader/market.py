@@ -30,6 +30,7 @@ class Bar:
     l: float  # noqa: E741
     c: float
     v: float = 0.0
+    synthetic: bool = False  # a placeholder for the next bar that hasn't opened yet (see session.py)
 
     def as_dict(self) -> dict[str, Any]:
         return {"t": self.t, "o": self.o, "h": self.h, "l": self.l, "c": self.c, "v": self.v}

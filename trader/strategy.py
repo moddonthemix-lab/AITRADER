@@ -43,6 +43,7 @@ MARKET_REASONS = {
     "rr_after_fees": "the targets don't pay enough after fees",
     "stop_too_wide": "the Strat stop is wider than the -10% hard stop allows",
     "no_chase": "it already ran past the trigger — no chasing",
+    "playbook": "the Strat documents rule this setup out",
 }
 # Never acceptable as a pass reason. These are incidents.
 DATA_WORDS = ("data feed", "no data", "market data", "api ", "timeout", "timed out", "offline", "unreachable",
