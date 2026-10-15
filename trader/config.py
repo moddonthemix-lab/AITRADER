@@ -17,15 +17,19 @@ from pathlib import Path
 
 
 def _load_dotenv(path: Path) -> None:
-    """Minimal .env loader (no python-dotenv needed). Variables already set win."""
+    """Minimal .env loader (no python-dotenv needed). If a setting appears twice in the file, the LAST one
+    counts; variables already set in the Terminal win over the file."""
     if not path.is_file():
         return
+    values: dict[str, str] = {}
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    for key, value in values.items():
+        os.environ.setdefault(key, value)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

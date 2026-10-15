@@ -150,3 +150,16 @@ def test_live_broker_prices_by_perp_rules_and_reports_fills(monkeypatch):
     monkeypatch.setattr(hl, "_info", lambda body: "unifiedAccount" if body["type"] == "userAbstraction" else
                         {"balances": [{"coin": "USDC", "total": "250.5"}, {"coin": "HYPE", "total": "3"}]})
     assert b.equity(inst) == 250.5
+
+
+def test_env_file_last_setting_wins(tmp_path, monkeypatch):
+    from trader.config import _load_dotenv
+
+    env = tmp_path / ".env"
+    env.write_text("TRADER_TEST_X=old\n# comment\nTRADER_TEST_X=new\n")
+    monkeypatch.delenv("TRADER_TEST_X", raising=False)
+    _load_dotenv(env)
+    import os
+
+    assert os.environ["TRADER_TEST_X"] == "new"
+    monkeypatch.delenv("TRADER_TEST_X")
