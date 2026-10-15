@@ -96,6 +96,10 @@ class Settings:
     max_symbols: int = field(default_factory=lambda: int(_env("TRADER_MAX_SYMBOLS", "25")))
     # Stocks and stock indexes only (no gold, oil or currencies) unless the watchlist names them.
     stocks_only: bool = field(default_factory=lambda: _flag("TRADER_STOCKS_ONLY", "1"))
+    # Crypto on Hyperliquid's main market, traded on daily setups only. Blank = no crypto.
+    crypto: list[str] = field(default_factory=lambda: _list("TRADER_CRYPTO", "BTC"))
+    # Only inside-bar setups (3-1-2, 2-1-2, 1-1-2 …) are taken. Set 0 to take all daily/4-hour setups.
+    inside_only: bool = field(default_factory=lambda: _flag("TRADER_INSIDE_ONLY", "1"))
 
     # ---- the boss's hard rules
     hard_stop_pct: float = field(default_factory=lambda: float(_env("TRADER_HARD_STOP_PCT", "10")))

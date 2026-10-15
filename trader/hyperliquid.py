@@ -28,7 +28,7 @@ from .net import HttpError, post_json
 
 # Hyperliquid tickers whose real chart lives under another Yahoo symbol (same price scale).
 CHART = {
-    "SP500": "^GSPC", "XYZ100": "^NDX", "US500": "SPY", "USTECH": "QQQ", "SMALL2000": "IWM",
+    "BTC": "BTC-USD", "SP500": "^GSPC", "XYZ100": "^NDX", "US500": "SPY", "USTECH": "QQQ", "SMALL2000": "IWM",
     "USA500": "SPY", "USA100": "QQQ", "SEMI": "SMH",
     "GOLD": "GC=F", "SILVER": "SI=F", "CL": "CL=F", "WTI": "CL=F", "USOIL": "CL=F", "OIL": "CL=F",
     "BRENTOIL": "BZ=F", "NATGAS": "NG=F", "GAS": "NG=F", "COPPER": "HG=F", "PLATINUM": "PL=F", "PALLADIUM": "PA=F",
@@ -64,6 +64,8 @@ class Instrument:
 
     @property
     def kind(self) -> str:
+        if self.dex == "":  # Hyperliquid's main market: crypto (BTC …)
+            return "crypto"
         return "index" if self.ticker in INDEXES else "other" if self.ticker in NON_STOCK else "stock"
 
 
@@ -88,9 +90,9 @@ def token_name(index: int) -> str:
 def markets(dexes: list[str] | None = None) -> list[Instrument]:
     """Every perp on the chosen HIP-3 markets, with its 24h volume, mark price and collateral."""
     out: list[Instrument] = []
-    for dex in dexes or settings.dexes:
+    for dex in dexes or (settings.dexes + ([""] if settings.crypto else [])):  # "" = the main market (crypto)
         try:
-            meta, ctxs = _info({"type": "metaAndAssetCtxs", "dex": dex})
+            meta, ctxs = _info({"type": "metaAndAssetCtxs", **({"dex": dex} if dex else {})})
         except (DataFeedError, ValueError, TypeError):
             continue  # a market that's down or gone: the others still count
         collateral = token_name(int(meta.get("collateralToken") or 0))
@@ -122,6 +124,8 @@ def universe(watchlist: list[str] | None = None, instruments: list[Instrument] |
         if m.coin.lower() in exact:
             best[m.coin] = m
             continue
+        if m.kind == "crypto" and m.ticker not in settings.crypto:
+            continue  # crypto only where the boss named it (TRADER_CRYPTO)
         if wanted and m.ticker not in tickers:
             continue
         if not wanted and settings.stocks_only and m.kind == "other":

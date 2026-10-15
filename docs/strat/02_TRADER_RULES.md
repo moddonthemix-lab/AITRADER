@@ -27,6 +27,13 @@ These are enforced in code. Trader explains them; he never bends them.
   Leverage doesn't change that dollar risk; it changes how little margin a position ties up. At most 3
   positions at once (`TRADER_MAX_OPEN`).
 
+## Where Trader trades
+
+- **Daily and 4-hour setups only.** No weekly setups (`strat.SETUP_TFS`).
+- **Inside-bar setups only** (`TRADER_INSIDE_ONLY=1`): the setup bar must be an inside bar (3-1-2, 2-1-2, 1-1-2 …).
+- **Bitcoin (BTC) on the main Hyperliquid market**, only on **daily** levels (`TRADER_CRYPTO=BTC`).
+- Stocks and stock indexes on the HIP-3 markets, as before.
+
 ## Activity rules
 
 - **Minimum 2 trades per week** (`TRADER_MIN_TRADES_WEEK`). On pace = A-grade setups only. Behind pace

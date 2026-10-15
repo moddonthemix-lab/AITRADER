@@ -22,7 +22,7 @@ from .market import Bar, candles, relative_volume
 
 TF_NAMES = {"Q": "Quarterly", "M": "Monthly", "W": "Weekly", "D": "Daily", "4H": "4-hour", "60": "60-minute"}
 THESIS_TFS = ("M", "W", "D")            # the timeframes the thesis is written around (must have data)
-SETUP_TFS = ("W", "D", "4H")            # where Trader takes setups (monthly ones are too wide for a -10% stop)
+SETUP_TFS = ("D", "4H")                 # where Trader takes setups: daily and 4-hour only (no weekly)
 CONTINUITY_TFS = ("Q", "M", "W", "D", "4H", "60")
 TF_ORDER = {"M": 0, "W": 1, "D": 2, "4H": 3, "60": 4}
 
