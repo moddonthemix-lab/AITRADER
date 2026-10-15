@@ -50,9 +50,9 @@ def failing_source(symbol, tf):
     raise DataFeedError("feed down")
 
 
-def inst(ticker="NVDA", mark=108.5, coin=None):
+def inst(ticker="NVDA", mark=108.5, coin=None, max_leverage=20):
     return Instrument(coin=coin or f"xyz:{ticker}", dex="xyz", ticker=ticker, chart=ticker, sz_decimals=3,
-                      max_leverage=20, only_isolated=False, day_volume=1e8, mark=mark)
+                      max_leverage=max_leverage, only_isolated=False, day_volume=1e8, mark=mark)
 
 
 class FakeBrain:

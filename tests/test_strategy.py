@@ -36,7 +36,8 @@ def test_inside_bars_rank_first(journal):
 
 
 def test_chop_is_a_market_reason_to_pass(journal):
-    sc = strategy.scan([inst(mark=102)], journal, WED, 0, chart_source=source_for(CHOP_DAILY, weekly=WEEKLY_DOWN),
+    sc = strategy.scan([inst(mark=102, max_leverage=1)], journal, WED, 0,
+                       chart_source=source_for(CHOP_DAILY, weekly=WEEKLY_DOWN),
                        perp_source=failing_source)
     assert not sc.tradeable
     code, detail = sc.pass_summary()

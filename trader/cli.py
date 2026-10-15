@@ -66,7 +66,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     line(True, f"Rules: hard stop -{settings.hard_stop_pct:g}%, min {settings.min_trades_week} trades/week, "
                f"min R:R {settings.min_rr:g} after {settings.fee_pct:g}%/side fees, inside bars first, "
                f"leverage {'max per market' if settings.leverage >= 1000 else str(settings.leverage) + 'x'} "
-               f"(liquidation ≥{settings.liq_buffer:g}x the stop away), trades with {settings.account_use_pct:g}% of the account, risk {settings.risk_per_trade_pct:g}%/trade")
+               f"(stop always inside liquidation), trades with {settings.account_use_pct:g}% of the account, risk {settings.risk_per_trade_pct:g}%/trade")
     # the hub
     if os.environ.get("HUB_TOKEN"):
         try:

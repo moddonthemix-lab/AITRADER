@@ -4,9 +4,10 @@ Hard stop: a position is closed before its price moves more than TRADER_HARD_STO
     fees included — measured on price, so it means the same at any leverage.
 Account use: the margin of all open positions together stays within TRADER_ACCOUNT_USE_PCT (75%) of the
     account; the other 25% is always a free cushion.
-Leverage: each market's maximum (TRADER_LEVERAGE=max), lowered per trade so liquidation stays at least
-    TRADER_LIQ_BUFFER (2x) further away than the stop. Leverage doesn't change the dollar risk (that's
-    TRADER_RISK_PER_TRADE_PCT); it changes how little margin each position ties up. The Strat stop (the other side of the setup bar) is used when it's tighter; a setup
+Leverage: always each market's full maximum (TRADER_LEVERAGE=max: CBRS 10x, SP500 50x). When the Strat stop
+    is beyond the liquidation price at that leverage, the stop moves inside it (TRADER_LIQ_STOP_AT, 80% of the
+    way), so Trader's own stop closes the trade, never a liquidation. Leverage doesn't change the dollar risk
+    (TRADER_RISK_PER_TRADE_PCT); it changes how little margin each position ties up. The Strat stop (the other side of the setup bar) is used when it's tighter; a setup
     whose Strat stop is further away than the hard stop is skipped — its risk doesn't fit the rule.
 Take profit: at the Strat target (the previous range's high/low). With no prior level in the way (price
     discovery) the target is a measured move of 2R.
@@ -51,15 +52,24 @@ def liquidation_distance(leverage: int, max_leverage: int) -> float:
     return 1 / max(1, leverage) - maintenance(max_leverage)
 
 
-def leverage_for(entry: float, stop: float, max_leverage: int) -> int:
-    """The market's maximum leverage (or TRADER_LEVERAGE), lowered only as far as needed so the liquidation
-    price is at least TRADER_LIQ_BUFFER times further away than the stop (fees included): the stop always
-    fires first."""
-    cap = max(1, min(settings.leverage, max_leverage))
-    stop_frac = abs(entry - stop) / entry + 2 * fee()
-    need = settings.liq_buffer * stop_frac + maintenance(max_leverage)
-    safe = int(1 / need) if need > 0 else cap
-    return max(1, min(cap, safe))
+def leverage_for(max_leverage: int) -> int:
+    """The market's full maximum leverage (TRADER_LEVERAGE=max), or the fixed number set, if lower."""
+    return max(1, min(settings.leverage, max_leverage))
+
+
+def liquidation_guard(entry: float, side: str, max_leverage: int) -> float:
+    """The furthest a stop may be at this leverage: TRADER_LIQ_STOP_AT (80%) of the way to the liquidation
+    price, so Trader's own stop order always closes the trade before a liquidation would."""
+    dist = liquidation_distance(leverage_for(max_leverage), max_leverage) * settings.liq_stop_at
+    return entry * (1 - dist) if side == "long" else entry * (1 + dist)
+
+
+def effective_stop(entry: float, side: str, strat_stop: float, max_leverage: int) -> tuple[float, str]:
+    """The Strat stop, or — when it's beyond the liquidation price at full leverage — the liquidation guard.
+    (The -10% hard stop is always further than both at any leverage above ~2x, and is checked separately.)"""
+    guard = liquidation_guard(entry, side, max_leverage)
+    tighter = max(strat_stop, guard) if side == "long" else min(strat_stop, guard)
+    return tighter, ("strat" if tighter == strat_stop else "liquidation guard")
 
 
 def lock_price(entry: float, side: str) -> float:
@@ -90,11 +100,16 @@ class Levels:
     rr: float
     target_kind: str          # strat | measured
     problem: str | None = None  # why it can't be traded (a market reason)
+    stop_kind: str = "strat"  # strat | liquidation guard
 
 
-def levels(side: str, entry: float, strat_stop: float, strat_target: float | None) -> Levels:
+def levels(side: str, entry: float, strat_stop: float, strat_target: float | None, max_leverage: int = 1) -> Levels:
     hard = hard_stop_price(entry, side)
     beyond = strat_stop < hard if side == "long" else strat_stop > hard
+    stop, stop_kind = effective_stop(entry, side, strat_stop, max_leverage) if max_leverage > 1 else (strat_stop, "strat")
+    if stop_kind != "strat":
+        beyond = False  # the guard is tighter than the hard stop
+    strat_stop = stop
     risk = abs(entry - strat_stop)
     kind = "strat"
     target = strat_target
@@ -102,7 +117,7 @@ def levels(side: str, entry: float, strat_stop: float, strat_target: float | Non
         target = entry + 2 * risk if side == "long" else entry - 2 * risk
         kind = "measured"
     rr = net_rr(entry, strat_stop, target)
-    lv = Levels(entry, strat_stop, target, hard, rr, kind)
+    lv = Levels(entry, strat_stop, target, hard, rr, kind, stop_kind=stop_kind)
     if risk <= 0:
         lv.problem = "no_setup_in_window"
     elif beyond:

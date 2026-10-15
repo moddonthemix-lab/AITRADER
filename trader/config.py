@@ -99,10 +99,11 @@ class Settings:
     priority: str = field(default_factory=lambda: _env("TRADER_PRIORITY", "inside"))
 
     # ---- sizing and risk
-    # "max" = each ticker's maximum leverage on Hyperliquid, lowered per trade only as far as needed to keep the
-    # liquidation price at least TRADER_LIQ_BUFFER times further away than the stop. Or a number, e.g. 5.
+    # "max" = always each ticker's full maximum leverage on Hyperliquid (CBRS 10x, SP500 50x). Or a number.
     leverage: int = field(default_factory=lambda: _leverage(_env("TRADER_LEVERAGE", "max")))
-    liq_buffer: float = field(default_factory=lambda: float(_env("TRADER_LIQ_BUFFER", "2")))
+    # If the Strat stop is beyond the liquidation price, the stop is moved inside it — this fraction of the
+    # way to liquidation — so Trader's own stop closes the trade, never a liquidation.
+    liq_stop_at: float = field(default_factory=lambda: float(_env("TRADER_LIQ_STOP_AT", "0.8")))
     # How much of the account Trader may trade with: the margin of all his open positions together never
     # goes over this % of the account; the rest always stays free as a cushion.
     account_use_pct: float = field(default_factory=lambda: float(_env("TRADER_ACCOUNT_USE_PCT", "75")))

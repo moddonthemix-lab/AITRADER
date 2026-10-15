@@ -210,7 +210,7 @@ function render(s) {
   $("t-week").textContent = `${s.week_trades} of ${s.min_week}`;
   const st = s.stats; $("t-win").textContent = st.trades ? `${Math.round(st.win_rate * 100)}% · ${st.avg_r >= 0 ? "+" : ""}${st.avg_r}R` : "—";
   const r = s.rules;
-  $("rules").textContent = `Rules: hard stop −${r.hard_stop_pct}% (fees in) · take profit at the Strat target · trailing stop ${r.trail} · inside bars first · R:R ≥ ${r.min_rr} after ${r.fee_pct}%/side fees · ${r.risk_pct}% risk per trade · leverage ${r.leverage === "max" ? "max per market (liquidation kept ≥2× beyond the stop)" : r.leverage + "x"} · entries ${r.window}.`;
+  $("rules").textContent = `Rules: hard stop −${r.hard_stop_pct}% (fees in) · take profit at the Strat target · trailing stop ${r.trail} · inside bars first · R:R ≥ ${r.min_rr} after ${r.fee_pct}%/side fees · ${r.risk_pct}% risk per trade · leverage ${r.leverage === "max" ? "full max per market (stop always inside liquidation)" : r.leverage + "x"} · entries ${r.window}.`;
   drawChart(s.pnl_series);
 
   $("positions").replaceChildren(table([

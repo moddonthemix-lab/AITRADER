@@ -11,7 +11,8 @@ from trader.hyperliquid import PaperBroker
 def paper(journal, prices, now, hub=None, brain=None):
     clock = {"now": now}
     e = Engine(journal, PaperBroker(journal, price_fn=lambda c: prices[c]), hub=hub, brain=brain or FakeBrain(),
-               instruments=lambda: [inst()], chart_source=source_for(DAILY_INSIDE), perp_source=failing_source,
+               instruments=lambda: [inst(max_leverage=1)],  # 1x: these tests are about the Strat stop itself
+               chart_source=source_for(DAILY_INSIDE), perp_source=failing_source,
                clock=lambda: clock["now"])
     return e, clock
 
@@ -105,8 +106,10 @@ def test_live_plans_wait_for_the_boss(journal, wednesday):
     assert broker.orders[0][:3] == ("open", "xyz:NVDA", True) and broker.stops  # stop placed on the exchange
     from trader import risk
 
-    lev = risk.leverage_for(110.1, 106, 20)  # NVDA's max is 20x; a 3.7% stop brings it down so liquidation stays 2x away
-    assert 1 < lev < 20 and broker.leverages[-1] == lev and journal.open_trades()[0]["leverage"] == lev
+    t = journal.open_trades()[0]
+    assert broker.leverages[-1] == 20 and t["leverage"] == 20  # NVDA's full max
+    # a 3.7% Strat stop is past 20x liquidation (~2.5%): the stop sits inside it instead
+    assert t["stop"] > 106 and 110.1 - t["stop"] < 110.1 * risk.liquidation_distance(20, 20)
     assert any(u[1] == "in_progress" and "Filled" in u[2] for u in hub.updates)
 
 
@@ -148,7 +151,7 @@ def test_daily_report_says_why_no_trade_and_keeps_incidents_separate(journal, we
     weekly_down = bars([(120, 125, 95, 100), (100, 115, 85, 105), (105, 116, 84, 103), (110, 114, 86, 102)],
                        step=7 * 86400)
     e = Engine(journal, PaperBroker(journal, price_fn=lambda c: 102), hub=hub, brain=FakeBrain(),
-               instruments=lambda: [inst(mark=102), inst("TSLA", coin="xyz:TSLA")],
+               instruments=lambda: [inst(mark=102, max_leverage=1), inst("TSLA", coin="xyz:TSLA")],
                chart_source=lambda s, tf: (source_for(chop, weekly=weekly_down) if s == "NVDA" else failing_source)(s, tf),
                perp_source=failing_source, clock=lambda: wednesday)
     e.scan(wednesday)

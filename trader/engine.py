@@ -294,8 +294,8 @@ class Engine:
                    f"{'buy' if data['side'] == 'long' else 'sell short'} when price breaks the trigger, with a stop "
                    f"order on Hyperliquid right away, the take-profit at the target, and a trailing stop once in profit. "
                    f"Hard stop: never more than {settings.hard_stop_pct:g}% against the entry price, fees included. "
-                   f"Leverage: the market's maximum, lowered if needed so liquidation stays at least "
-                   f"{settings.liq_buffer:g}x further than the stop. At the stop I lose about "
+                   f"Leverage: the market's full maximum; if the stop would be past the liquidation price, it's moved "
+                   f"inside it so my stop closes the trade first. At the stop I lose about "
                    f"{settings.risk_per_trade_pct:g}% of my trading money ({settings.account_use_pct:g}% of the account; "
                    f"the rest stays free). "
                    f"Not approved by then = no trade.\n\nThe read:\n{data['thesis'][:1500]}")
@@ -404,7 +404,8 @@ class Engine:
         long_ = d["side"] == "long"
         try:
             equity = self.broker.equity(inst)
-            lev = risk.leverage_for(px, d["stop"], inst.max_leverage)
+            lev = risk.leverage_for(inst.max_leverage)
+            d = {**d, "stop": risk.effective_stop(px, d["side"], d["stop"], inst.max_leverage)[0]}
             in_use = sum(t["entry"] * t["size"] / max(1, t["leverage"] or 1) for t in self.j.open_trades(mode=self.mode))
             size = risk.size_for(equity, px, d["stop"], inst.sz_decimals, lev, in_use)
         except Exception as e:  # noqa: BLE001
@@ -424,7 +425,8 @@ class Engine:
             return None
         # Levels from the real fill: the hard stop is measured from what was actually paid.
         hard = risk.hard_stop_price(fill.price, d["side"])
-        stop = max(d["stop"], hard) if long_ else min(d["stop"], hard)
+        guarded = risk.effective_stop(fill.price, d["side"], d["stop"], inst.max_leverage)[0]  # from the real fill
+        stop = max(guarded, hard) if long_ else min(guarded, hard)
         stop, hard = hl.round_px(stop, inst.sz_decimals), hl.round_px(hard, inst.sz_decimals)
         target = hl.round_px(d["target"], inst.sz_decimals)
         try:

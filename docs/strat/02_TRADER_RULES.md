@@ -17,9 +17,10 @@ These are enforced in code. Trader explains them; he never bends them.
 - **Fees count.** Every target, R:R and P&L number is after the fee on the way in and out.
 - **Hard stop on price.** The -10% is measured on the position's price (fees included), so it means the
   same at any leverage.
-- **Leverage: the maximum each ticker allows** (`TRADER_LEVERAGE=max`), lowered for a trade only as far as
-  needed to keep Hyperliquid's liquidation price at least 2x further away than the stop
-  (`TRADER_LIQ_BUFFER`), so the stop always fires first. Isolated margin: a loss stays in its own trade.
+- **Leverage: always the full maximum each ticker allows** (`TRADER_LEVERAGE=max`): CBRS 10x, S&P 500 50x.
+  If the Strat stop is past the liquidation price at that leverage, the stop is moved inside it (80% of the
+  way, `TRADER_LIQ_STOP_AT`), so Trader's own stop closes the trade, never a liquidation. Isolated margin: a
+  loss stays in its own trade.
 - **75% of the account to trade with** (`TRADER_ACCOUNT_USE_PCT`). The margin of all open positions together
   never goes over 75% of the account; the other 25% always stays free.
 - **Sizing.** About 2% of the trading money at risk between entry and stop (`TRADER_RISK_PER_TRADE_PCT`).

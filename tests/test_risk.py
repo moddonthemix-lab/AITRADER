@@ -81,22 +81,21 @@ def test_position_size_uses_75_percent_of_the_account():
     assert risk.size_for(20, 100, 96, 3) == 0  # below Hyperliquid's $10 minimum
 
 
-def test_max_leverage_but_liquidation_always_beyond_the_stop():
-    # 2% stop on a 20x market: 20x liquidates ~2.5% away — not 2x beyond the stop+fees (4.4%), so lowered to 14x
-    lev = risk.leverage_for(100, 98, 20)
-    assert lev == 14
-    assert risk.liquidation_distance(lev, 20) >= settings.liq_buffer * (0.02 + 2 * risk.fee())
-    assert risk.liquidation_distance(20, 20) < settings.liq_buffer * (0.02 + 2 * risk.fee())
-    # a 1% stop on the same market can use the full 20x (liquidation 2.5% away vs 2x 1.18%)
-    assert risk.leverage_for(100, 99, 20) == 20
-    assert risk.liquidation_distance(20, 20) >= settings.liq_buffer * (0.002 + 2 * risk.fee())
-    # a wide stop falls back toward 1x, never below
-    assert risk.leverage_for(100, 91, 50) >= 1
-    # a fixed number caps it
+def test_full_max_leverage_and_the_stop_always_inside_liquidation():
+    assert risk.leverage_for(10) == 10 and risk.leverage_for(50) == 50  # CBRS 10x, SP500 50x
+    # 50x liquidates ~1% away: a 2% Strat stop moves inside it (80% of the way), so the stop fires first
+    stop, kind = risk.effective_stop(100, "long", 98, 50)
+    assert kind == "liquidation guard" and stop == pytest.approx(100 * (1 - 0.01 * settings.liq_stop_at))
+    assert 100 - stop < 100 * risk.liquidation_distance(50, 50)
+    # a Strat stop already inside liquidation is kept as it is
+    assert risk.effective_stop(100, "long", 99.5, 50) == (99.5, "strat")
+    assert risk.effective_stop(100, "short", 103, 10)[1] == "strat"  # 10x liquidates ~5% away
+    lv = risk.levels("long", 100, 98, 110, max_leverage=50)
+    assert lv.stop_kind == "liquidation guard" and lv.stop > 98 and lv.problem is None
     old = settings.leverage
-    settings.leverage = 3
+    settings.leverage = 3  # a fixed number caps it
     try:
-        assert risk.leverage_for(100, 99.8, 20) == 3
+        assert risk.leverage_for(50) == 3
     finally:
         settings.leverage = old
 
