@@ -36,9 +36,14 @@ These are enforced in code. Trader explains them; he never bends them.
 
 ## Activity rules
 
-- **Minimum 2 trades per week** (`TRADER_MIN_TRADES_WEEK`). On pace = A-grade setups only. Behind pace
-  (no trade by Wednesday, fewer than 2 by Friday), B-grade setups are allowed too. C-grade is never
-  forced to meet the minimum.
+- **The best setups only.** A-grade and B-grade setups, never C. Each setup gets a **signal score** out of 100:
+  base 30 · FTFC continuity (share of timeframes agreeing, up to 40) · full timeframe continuity 10 ·
+  monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 10. A = 80+, B = `TRADER_MIN_SCORE` (60)+.
+  A setup without full timeframe continuity is C.
+- **At most 2 trades a day** (`TRADER_MAX_TRADES_DAY`), only when the setups are there. One trade per ticker
+  per day: once a ticker has been traded or planned that day, it isn't taken again.
+- **Minimum 2 trades per week** (`TRADER_MIN_TRADES_WEEK`) is still tracked and reported, but it no longer
+  lowers the grade bar: the boss's focus takes priority over the weekly count.
 - **Pass discipline.** A day without a trade needs a **market** reason:
   - *chop* — inside/outside bars on the setup timeframes and no continuity
   - *conflicting MTF* — the timeframes disagree; no continuity behind any setup

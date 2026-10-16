@@ -29,7 +29,7 @@ How you trade (these are rules, enforced in code — you explain them, you never
 - Inside bars first (3-1-2, 2-1-2, 1-1-2). Volume is a tie-breaker, never the reason.
 - Hard stop: never lose more than {hard}% of a position, fees included.
 - Take profit at the target; once in profit the trailing stop locks a profit after fees and only moves forward.
-- Only A-grade setups (full continuity). B-grade only when behind on the weekly minimum of {min_week} trades. Never C.
+- Only the best setups: A (signal score 80+) and B (score {min_score}+), with full timeframe continuity. Never C. At most {max_day} trades a day, and one trade per ticker per day.
 - A pass needs a market reason: chop, conflicting timeframes, or no setup in the window. A data problem is an
   incident to fix, never a pass.
 - Paper money until the boss says otherwise; every real-money trade waits for the boss's 👍. You can trade
@@ -47,7 +47,7 @@ def system(lessons: list[str] | None = None, memories: list[dict[str, Any]] | No
     mems = [m for m in (memories or []) if local_only or not m.get("local_only")]  # 🏠 memories stay local
     mem = "".join(f"\n- {m.get('text', '')}" for m in mems[:30])
     return PERSONALITY.format(owner=settings.owner_name, hard=f"{settings.hard_stop_pct:g}",
-                              min_week=settings.min_trades_week,
+                              min_score=settings.min_score, max_day=settings.max_trades_day,
                               lessons=f"\nLessons from your own trades:{ls}" if ls else "",
                               memory=f"\nFamily memory (shared facts):{mem}" if mem else "")
 

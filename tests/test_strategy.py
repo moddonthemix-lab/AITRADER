@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from conftest import DAILY_INSIDE, bars, failing_source, inst, source_for
 
-from trader import strategy
+from trader import risk, strat, strategy
 
 WED = date(2026, 10, 14)
 
@@ -70,8 +70,18 @@ def test_a_chart_that_doesnt_match_the_perp_is_not_used(journal):
     assert sc.incidents and "doesn't match" in sc.incidents[0]
 
 
-def test_b_grades_only_when_behind_pace(journal):
-    sc = strategy.scan([], journal, date(2026, 10, 12), 0)  # Monday
-    assert sc.allowed_grades == ("A",)
-    sc = strategy.scan([], journal, WED, 0)
-    assert sc.allowed_grades == ("A", "B")
+def test_only_a_and_b_setups_are_taken_every_day(journal):
+    for day in (date(2026, 10, 12), WED):  # Monday and Wednesday alike
+        sc = strategy.scan([], journal, day, 0)
+        assert sc.allowed_grades == ("A", "B")
+
+
+def test_signal_score_adds_up_and_grades_by_threshold():
+    a = {"continuity": {"up": ["Q", "M", "W", "D", "4H"], "down": []}}
+    s = strat.Setup(tf="D", name="3-1-2", direction="long", status="waiting", trigger=10, stop=9,
+                    target=12, with_continuity=True, family="3-1-2")
+    score, parts = strategy.signal_score(a, s)
+    assert score == 30 + 40 + 10 == 80 and sum(p[1] for p in parts) == score
+    assert strategy.grade_of(a, s, risk.Levels(10, 9, 12, 9, 2.0, "strat"))[0] == "A"
+    s.with_continuity = False
+    assert strategy.grade_of(a, s, risk.Levels(10, 9, 12, 9, 2.0, "strat"))[0] == "C"

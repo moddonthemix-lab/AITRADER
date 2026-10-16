@@ -250,7 +250,9 @@ function render(s) {
 function renderScan(sc) {
   if (!sc) { $("scan").replaceChildren(el("div", { className: "muted small", style: "margin-top:8px" }, "Press “Scan now” (about half a minute).")); return; }
   const kids = [el("div", { className: "small", style: "margin:8px 0" }, `Scanned ${fmtTime(sc.at)} · grades taken today: ${sc.grades.join("/")}${sc.behind_pace ? " (behind pace for the weekly minimum)" : ""}`)];
-  if (sc.setups.length) kids.push(el("ul", { className: "list" }, ...sc.setups.map(x => el("li", {}, el("span", { className: "chip" }, x.grade + (x.inside ? " · inside bar" : "")), x.summary))));
+  if (sc.setups.length) kids.push(el("ul", { className: "list" }, ...sc.setups.map(x => el("li", {},
+    el("span", { className: "chip" }, `${x.grade} · ${x.score}%` + (x.inside ? " · inside bar" : "")), x.summary,
+    el("div", { className: "small muted", style: "margin-top:4px" }, x.parts.map(p => `${p[0]} ${p[1]}/${p[2]}`).join(" · "))))));
   if (sc.pass) kids.push(el("div", { className: "notice small", style: "margin-top:8px" }, "Pass — " + sc.pass.reason.replaceAll("_", " ") + ": " + sc.pass.detail));
   sc.incidents.forEach(i => kids.push(el("div", { className: "small muted", style: "margin-top:6px" }, "Incident (not a pass): " + i)));
   $("scan").replaceChildren(...kids);

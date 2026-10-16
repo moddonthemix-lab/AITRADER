@@ -76,6 +76,8 @@ class Candidate:
     basis: float               # perp price / chart price (levels are scaled by this)
     thesis: str
     bias: str
+    score: int = 0                                  # the signal score, out of 100
+    parts: list = field(default_factory=list)       # (label, points earned, points possible)
 
     @property
     def key(self) -> tuple:
@@ -84,7 +86,7 @@ class Candidate:
         vol = 0
         if s.rvol is not None:  # an inside bar on lighter volume is a coil; a breakout bar wants volume
             vol = 1 if (s.inside and s.rvol < 1) or (not s.inside and s.rvol >= 1.2) else 0
-        return (GRADE_RANK[self.grade], inside_first, round(self.edge, 2), self.levels.rr, vol,
+        return (self.score, GRADE_RANK[self.grade], inside_first, round(self.edge, 2), self.levels.rr, vol,
                 -strat.TF_ORDER.get(s.tf, 9))
 
     def summary(self) -> str:
@@ -95,7 +97,7 @@ class Candidate:
         vol = f", setup-bar volume x{s.rvol:g}" if s.rvol else ""
         lev = risk.leverage_for(self.inst.max_leverage)
         lev_txt = f", {lev}x leverage" + (" (stop moved inside the liquidation price)" if lv.stop_kind != "strat" else "")
-        return (f"{self.grade}-grade {s.direction} {self.inst.coin}: {strat.TF_NAMES[s.tf]} {s.name} {how}; "
+        return (f"{self.grade}-grade ({self.score}%) {s.direction} {self.inst.coin}: {strat.TF_NAMES[s.tf]} {s.name} {how}; "
                 f"stop {fmt(lv.stop)}, target {fmt(lv.target)} ({lv.target_kind}), hard stop {fmt(lv.hard_stop)}, "
                 f"R:R after fees {lv.rr:g}{lev_txt}{', inside bar' if s.inside else ''}{vol}. Bias {self.bias}.")
 
@@ -164,12 +166,37 @@ def read_market(inst: Instrument, chart_source: Callable | None = None, perp_sou
     return Read(inst, None, "none", 0, incident=f"couldn't read {inst.coin} ({'; '.join(problems)[:300]})")
 
 
-def grade_of(a: dict[str, Any], s: strat.Setup, lv: risk.Levels) -> str:
+A_SCORE = 80  # the signal score an A-grade setup needs (B needs TRADER_MIN_SCORE, default 60)
+
+
+def signal_score(a: dict[str, Any], s: strat.Setup) -> tuple[int, list[tuple[str, int, int]]]:
+    """The signal score out of 100, with its parts: (label, points earned, points possible).
+    Base 30 · FTFC continuity (share of timeframes agreeing, up to 40) · full timeframe continuity 10 ·
+    monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 10."""
+    up = s.direction == "long"
+    agree = a["continuity"]["up" if up else "down"]
+    other = a["continuity"]["down" if up else "up"]
+    total = len(agree) + len(other)
+    parts = [
+        ("Base", 30, 30),
+        (f"FTFC continuity {len(agree)}/{total}", round(40 * len(agree) / total) if total else 0, 40),
+        ("Full timeframe continuity", 10 if s.with_continuity else 0, 10),
+        ("Monthly aligned", 5 if "M" in agree else 0, 5),
+        ("4H trigger (break of prior range)", 10 if s.tf == "4H" else 0, 10),
+        ("2-2 reversal", 10 if s.family == "2-2 reversal" else 0, 10),
+    ]
+    return min(100, sum(p[1] for p in parts)), parts
+
+
+def grade_of(a: dict[str, Any], s: strat.Setup, lv: risk.Levels) -> tuple[str, int, list[tuple[str, int, int]]]:
+    """(grade, signal score, score parts). A = score 80+, B = score TRADER_MIN_SCORE+, C = never traded.
+    A setup without full timeframe continuity is C."""
+    score, parts = signal_score(a, s)
     if lv.problem or not s.with_continuity:
-        return "C"
-    if a["continuity"]["ftfc"] == ("up" if s.direction == "long" else "down"):
-        return "A"
-    return "B"
+        return "C", score, parts
+    if score >= A_SCORE:
+        return "A", score, parts
+    return ("B" if score >= settings.min_score else "C"), score, parts
 
 
 def evaluate(r: Read, j: Journal, price: float | None = None) -> Read:
@@ -205,8 +232,9 @@ def evaluate(r: Read, j: Journal, price: float | None = None) -> Read:
             problems[lv.problem] += 1
             continue
         e, _ = learning.edge(j, s.family, s.tf)
-        r.candidates.append(Candidate(r.inst, s, lv, grade_of(a, s, lv), how, e, r.source, b,
-                                      strat.thesis(a), a["bias"]))
+        grade, score, parts = grade_of(a, s, lv)
+        r.candidates.append(Candidate(r.inst, s, lv, grade, how, e, r.source, b, strat.thesis(a), a["bias"],
+                                      score=score, parts=parts))
     if not r.candidates:
         if strat.is_chop(a):
             r.pass_reason, r.pass_detail = "chop", f"W/D bars {_types(a)}, bias {a['bias']}"
@@ -231,7 +259,7 @@ def scan(instruments: list[Instrument], j: Journal, today: date, trades_this_wee
     reads = [evaluate(read_market(i, chart_source, perp_source), j) for i in instruments]
     ranked = sorted((c for r in reads for c in r.candidates), key=lambda c: c.key, reverse=True)
     behind = risk.behind_pace(trades_this_week, today)
-    allowed = ("A", "B") if behind else ("A",)
+    allowed = ("A", "B")  # the best setups only: A (score 80+) and B (score TRADER_MIN_SCORE+); never C
     for r in reads:
         if r.incident:
             log.warning("incident: %s", r.incident)

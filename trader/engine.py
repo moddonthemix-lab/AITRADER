@@ -185,11 +185,13 @@ class Engine:
         taken = self.active_coins()
         slots = settings.max_open - len(self.j.open_trades()) - len(
             self.j.all("SELECT id FROM plans WHERE status IN ('waiting_approval','armed')"))
+        tickers_today, used_today = self.today_so_far(today)
+        slots = min(slots, settings.max_trades_day - used_today)
         planned = 0
         for c in sc.tradeable:
             if planned >= slots:
                 break
-            if c.inst.coin in taken:
+            if c.inst.coin in taken or c.inst.ticker in tickers_today:  # one trade per ticker per day
                 continue
             taken.add(c.inst.coin)
             ok, why = self.check_documents(c, today)
@@ -203,6 +205,16 @@ class Engine:
             if ps:
                 self.record_pass(today, *ps)
         return sc
+
+    def today_so_far(self, day: date) -> tuple[set[str], int]:
+        """(tickers already traded or planned today, how many trades + live plans count toward the daily limit)."""
+        opened = [t for t in self.j.opened_on(day) if t["mode"] == self.mode]
+        start = datetime.combine(day, datetime.min.time(), NY).astimezone(timezone.utc).isoformat(timespec="seconds")
+        plans = self.j.all("SELECT coin FROM plans WHERE created_at >= ? AND status IN ('waiting_approval','armed')",
+                           (start,))
+        tickers = {t["ticker"] or t["coin"].split(":")[-1] for t in opened}
+        tickers |= {p["coin"].split(":")[-1] for p in plans}
+        return tickers, len(opened) + len(plans)
 
     def check_documents(self, c: strategy.Candidate, day: date) -> tuple[bool, str]:
         """Does the boss's Strat documents rule this setup out? Only the boss's own files are consulted (the

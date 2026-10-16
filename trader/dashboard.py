@@ -198,7 +198,8 @@ class Dashboard:
         self._last_scan = {"at": datetime.now(NY).isoformat(timespec="minutes"),
                            "grades": list(sc.allowed_grades), "behind_pace": sc.behind_pace,
                            "setups": [{"coin": c.inst.coin, "grade": c.grade, "inside": c.setup.inside,
-                                       "summary": c.summary()} for c in sc.ranked[:10]],
+                                       "score": c.score, "parts": c.parts, "summary": c.summary()}
+                                      for c in sc.ranked[:10]],
                            "pass": {"reason": ps[0], "detail": ps[1]} if ps else None,
                            "incidents": sc.incidents}
         return self._last_scan

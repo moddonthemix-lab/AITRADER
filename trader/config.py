@@ -117,6 +117,10 @@ class Settings:
     account_use_pct: float = field(default_factory=lambda: float(_env("TRADER_ACCOUNT_USE_PCT", "75")))
     risk_per_trade_pct: float = field(default_factory=lambda: float(_env("TRADER_RISK_PER_TRADE_PCT", "2")))
     max_open: int = field(default_factory=lambda: int(_env("TRADER_MAX_OPEN", "3")))
+    # At most this many trades a day (new plans + fills), and one trade per ticker per day.
+    max_trades_day: int = field(default_factory=lambda: int(_env("TRADER_MAX_TRADES_DAY", "2")))
+    # The lowest signal score (out of 100) Trader trades. 80+ is an A, this floor or more is a B.
+    min_score: int = field(default_factory=lambda: int(_env("TRADER_MIN_SCORE", "60")))
     min_rr: float = field(default_factory=lambda: float(_env("TRADER_MIN_RR", "1.5")))
     # Fee per side, in percent of the trade's value. HIP-3 stock perps cost more than crypto perps;
     # 0.09% is a safe assumption. Trader reads the real rate from Hyperliquid when the wallet is set.
