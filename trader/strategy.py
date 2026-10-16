@@ -171,19 +171,20 @@ A_SCORE = 80  # the signal score an A-grade setup needs (B needs TRADER_MIN_SCOR
 
 def signal_score(a: dict[str, Any], s: strat.Setup) -> tuple[int, list[tuple[str, int, int]]]:
     """The signal score out of 100, with its parts: (label, points earned, points possible).
-    Base 30 · FTFC continuity (share of timeframes agreeing, up to 40) · full timeframe continuity 10 ·
-    monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 10."""
+    Base 30 · FTFC continuity (share of timeframes agreeing, up to 35) · full timeframe continuity 10 ·
+    daily aligned 5 · monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 5."""
     up = s.direction == "long"
     agree = a["continuity"]["up" if up else "down"]
     other = a["continuity"]["down" if up else "up"]
     total = len(agree) + len(other)
     parts = [
         ("Base", 30, 30),
-        (f"FTFC continuity {len(agree)}/{total}", round(40 * len(agree) / total) if total else 0, 40),
+        (f"FTFC continuity {len(agree)}/{total}", round(35 * len(agree) / total) if total else 0, 35),
         ("Full timeframe continuity", 10 if s.with_continuity else 0, 10),
+        ("Daily aligned", 5 if "D" in agree else 0, 5),
         ("Monthly aligned", 5 if "M" in agree else 0, 5),
         ("4H trigger (break of prior range)", 10 if s.tf == "4H" else 0, 10),
-        ("2-2 reversal", 10 if s.family == "2-2 reversal" else 0, 10),
+        ("2-2 reversal", 5 if s.family == "2-2 reversal" else 0, 5),
     ]
     return min(100, sum(p[1] for p in parts)), parts
 

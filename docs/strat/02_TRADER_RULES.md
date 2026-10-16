@@ -37,8 +37,9 @@ These are enforced in code. Trader explains them; he never bends them.
 ## Activity rules
 
 - **The best setups only.** A-grade and B-grade setups, never C. Each setup gets a **signal score** out of 100:
-  base 30 · FTFC continuity (share of timeframes agreeing, up to 40) · full timeframe continuity 10 ·
-  monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 10. A = 80+, B = `TRADER_MIN_SCORE` (60)+.
+  base 30 · FTFC continuity (share of timeframes agreeing, up to 35) · full timeframe continuity 10 ·
+  daily aligned 5 · monthly aligned 5 · 4-hour trigger 10 · 2-2 reversal 5 (total 100).
+  A = 80+, B = `TRADER_MIN_SCORE` (60)+.
   A setup without full timeframe continuity is C.
 - **At most 2 trades a day** (`TRADER_MAX_TRADES_DAY`), only when the setups are there. One trade per ticker
   per day: once a ticker has been traded or planned that day, it isn't taken again.

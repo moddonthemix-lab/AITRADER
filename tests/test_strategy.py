@@ -81,7 +81,7 @@ def test_signal_score_adds_up_and_grades_by_threshold():
     s = strat.Setup(tf="D", name="3-1-2", direction="long", status="waiting", trigger=10, stop=9,
                     target=12, with_continuity=True, family="3-1-2")
     score, parts = strategy.signal_score(a, s)
-    assert score == 30 + 40 + 10 == 80 and sum(p[1] for p in parts) == score
+    assert score == 30 + 35 + 10 + 5 + 5 == 85 and sum(p[1] for p in parts) == score
     assert strategy.grade_of(a, s, risk.Levels(10, 9, 12, 9, 2.0, "strat"))[0] == "A"
     s.with_continuity = False
     assert strategy.grade_of(a, s, risk.Levels(10, 9, 12, 9, 2.0, "strat"))[0] == "C"
