@@ -206,11 +206,8 @@ def evaluate(r: Read, j: Journal, price: float | None = None) -> Read:
     if a is None:
         return r
     px = (price if price is not None else r.inst.mark) / (r.basis or 1)  # the perp's price on the chart's scale
-    setups: list[strat.Setup] = [s for s in a["_setups"] if s.tf in strat.SETUP_TFS]
-    if r.inst.kind == "crypto":  # BTC: daily levels only
-        setups = [s for s in setups if s.tf == "D"]
-    if settings.inside_only:  # the boss's focus: daily inside bars, and 3-1 setups on the 4-hour
-        setups = [s for s in setups if (s.tf == "D" and s.inside) or (s.tf == "4H" and s.family.startswith("3-1"))]
+    crypto = r.inst.kind == "crypto"
+    setups: list[strat.Setup] = [s for s in a["_setups"] if s.tf in strat.SETUP_TFS and strat.in_focus(s, crypto)]
     live =[s for s in setups if s.status in ("waiting", "triggered")]
     aligned = [s for s in live if s.with_continuity]
     problems: Counter = Counter()

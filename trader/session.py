@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import date, datetime, time as dtime, timedelta
 from typing import Any, Callable
 
+from .config import settings
 from .journal import NY
 from .market import Bar, candles
 
@@ -90,6 +91,11 @@ def prepare(bars: list[Bar], tf: str, now: datetime) -> list[Bar]:
     return out
 
 
+def is_crypto(symbol: str) -> bool:
+    """BTC, or BTC-USD, or hl's main-market coin: the crypto markets in TRADER_CRYPTO."""
+    return symbol.split(":")[-1].split("-")[0].upper() in {c.upper() for c in settings.crypto}
+
+
 def session_source(base: Callable[[str, str], tuple[list[Bar], dict[str, Any]]] | None,
                    now: datetime) -> Callable[[str, str], tuple[list[Bar], dict[str, Any]]]:
     """Wrap a candle source so every timeframe is read correctly for `now`."""
@@ -97,5 +103,7 @@ def session_source(base: Callable[[str, str], tuple[list[Bar], dict[str, Any]]] 
 
     def src(symbol: str, tf: str) -> tuple[list[Bar], dict[str, Any]]:
         bars, meta = get(symbol, tf)
+        if is_crypto(symbol):  # crypto trades around the clock: its days are UTC days, not the NY session
+            return bars, meta
         return prepare(bars, tf, now), meta
     return src

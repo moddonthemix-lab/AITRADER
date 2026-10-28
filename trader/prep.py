@@ -48,7 +48,7 @@ def plan_for(inst: Instrument, a: dict[str, Any]) -> list[dict[str, Any]]:
     side, arrows = higher_tf_side(a)
     out: dict[str, dict[str, Any]] = {}
     for s in a["_setups"]:
-        if not s.inside or s.tf not in TF_ORDER or s.status != "waiting":
+        if s.tf not in TF_ORDER or s.status != "waiting" or not strat.in_focus(s, inst.kind == "crypto"):
             continue
         frame = a["_frames"][s.tf]
         if not frame.waiting and s.tf != "W":

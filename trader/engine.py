@@ -29,7 +29,7 @@ from .hyperliquid import Broker, Instrument
 from .journal import NY, Journal, now_iso, ny_now, week_start
 from .knowledge import library
 from .market import Bar, DataFeedError
-from .session import session_source
+from .session import is_crypto, session_source
 
 log = logging.getLogger(__name__)
 
@@ -54,8 +54,12 @@ def entries_open(now: datetime) -> bool:
     return now.weekday() < 5 and _hm(settings.window_start) <= now.time() <= _hm(settings.window_end)
 
 
-def bar_close(tf: str, now: datetime) -> datetime:
-    """When the bar the trigger lives in closes (New York time): the plan expires then."""
+def bar_close(tf: str, now: datetime, crypto: bool = False) -> datetime:
+    """When the bar the trigger lives in closes: the plan expires then. Stocks: the New York session. Crypto
+    (BTC): its daily bar closes at 00:00 UTC."""
+    if crypto:
+        utc = now.astimezone(timezone.utc)
+        return datetime.combine(utc.date() + timedelta(days=1), dtime(0), timezone.utc)
     now = now.astimezone(NY)
     close = datetime.combine(now.date(), dtime(16, 0), NY)
     if tf == "4H":
@@ -274,7 +278,7 @@ class Engine:
                 "target": lv.target, "hard_stop": lv.hard_stop, "rr": lv.rr, "target_kind": lv.target_kind,
                 "entry_type": c.entry_type, "source": c.source, "summary": c.summary(), "thesis": c.thesis,
                 "basis": c.basis, "entry_bar_stop": int(s.entry_bar_stop)}
-        expires = bar_close(s.tf, now)
+        expires = bar_close(s.tf, now, inst.kind == "crypto")
         ask = self.broker.live and settings.live_approval != "auto"
         status = "waiting_approval" if ask else "armed"
         pid = self.j.insert("plans", {"mode": self.mode, "coin": inst.coin, "side": s.direction,
@@ -408,8 +412,9 @@ class Engine:
         if bar is None:
             return False
         opened = datetime.fromtimestamp(bar.t, NY)
-        if opened.date() != now.astimezone(NY).date() or opened.time() < _hm(settings.scan_start):
-            return False  # only candles from today's session count
+        if not is_crypto(d["coin"]) and (opened.date() != now.astimezone(NY).date()
+                                         or opened.time() < _hm(settings.scan_start)):
+            return False  # only candles from today's session count (crypto trades around the clock)
         return (bar.c - d["entry"]) * sign > 0
 
     def entry_bar_stop(self, d: dict[str, Any]) -> float:

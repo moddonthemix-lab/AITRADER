@@ -18,6 +18,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from .config import settings
 from .market import Bar, candles, relative_volume
 
 TF_NAMES = {"Q": "Quarterly", "M": "Monthly", "W": "Weekly", "D": "Daily", "4H": "4-hour", "60": "60-minute"}
@@ -136,6 +137,16 @@ def _target_below(bars: list[Bar], level: float, first: float | None = None) -> 
         return first
     lows = [b.l for b in reversed(bars[-40:]) if b.l < level]
     return max(lows) if lows else None
+
+
+def in_focus(s: Setup, crypto: bool = False) -> bool:
+    """The boss's focus (TRADER_INSIDE_ONLY): daily inside bars, and 3-1 setups on the 4-hour. Crypto (BTC) is
+    daily only. The game plan and the scan both use this one rule."""
+    if not settings.inside_only:
+        return s.tf == "D" or (s.tf == "4H" and not crypto)
+    if crypto:
+        return s.tf == "D" and s.inside
+    return (s.tf == "D" and s.inside) or (s.tf == "4H" and s.family.startswith("3-1"))
 
 
 def family_of(name: str) -> str:
