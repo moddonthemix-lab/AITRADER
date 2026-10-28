@@ -270,6 +270,7 @@ class Engine:
                 "only_isolated": int(inst.only_isolated), "collateral": inst.collateral, "side": s.direction, "setup": s.name, "family": s.family,
                 "tf": s.tf, "grade": c.grade, "inside": int(s.inside), "rvol": s.rvol,
                 "with_continuity": int(bool(s.with_continuity)), "entry": lv.entry, "stop": lv.stop,
+                "trigger": round(s.trigger * c.basis, 4),
                 "target": lv.target, "hard_stop": lv.hard_stop, "rr": lv.rr, "target_kind": lv.target_kind,
                 "entry_type": c.entry_type, "source": c.source, "summary": c.summary(), "thesis": c.thesis,
                 "basis": c.basis, "entry_bar_stop": int(s.entry_bar_stop)}
@@ -478,7 +479,7 @@ class Engine:
             side=d["side"], setup=d["setup"], family=d["family"], tf=d["tf"], grade=d["grade"], inside=d["inside"],
             with_continuity=d["with_continuity"], rvol=d["rvol"], entry=fill.price, size=fill.size, stop=stop,
             initial_stop=stop, hard_stop=hard, target=target, fees=fill.fee, protection=ids, plan_id=plan["id"],
-            leverage=lev,
+            leverage=lev, trigger=d.get("trigger") or d["entry"],
             thesis=d["thesis"], notes=d["summary"], opened_at=self.stamp())
         self.j.update("plans", plan["id"], {"status": "filled", "updated_at": now_iso()})
         self._task_update(plan["task_id"], "in_progress",
@@ -507,6 +508,9 @@ class Engine:
                         continue
                 except Exception as e:  # noqa: BLE001
                     log.info("couldn't read the position for %s (%s)", t["coin"], type(e).__name__)
+            if self.invalidated(t):  # back inside the break on a 5-minute close: out at market, the loss stays small
+                self.close(self.j.trade(t["id"]) or t, "invalid")
+                continue
             st = risk.manage(t, px, inst.sz_decimals)
             changes: dict[str, Any] = {}
             if st.peak != t["peak"]:
@@ -524,6 +528,20 @@ class Engine:
                 self.j.update("trades", t["id"], changes)
             if st.exit_reason:
                 self.close(self.j.trade(t["id"]) or t, st.exit_reason)
+
+    def invalidated(self, t: dict[str, Any]) -> bool:
+        """The invalidation: the last finished 5-minute candle, opened after the entry, CLOSED back through the
+        trigger (long: below it, short: above it) — back inside the setup bar."""
+        trig = t.get("trigger")
+        if not trig:
+            return False
+        try:
+            bar = hl.last_closed_candle(t["coin"])
+        except Exception:  # noqa: BLE001 — no candle now: the exchange stop still protects the trade
+            return False
+        if bar is None or bar.t + 300 <= datetime.fromisoformat(t["opened_at"]).timestamp():
+            return False  # that candle finished before the entry
+        return bar.c < trig if t["side"] == "long" else bar.c > trig
 
     def close(self, t: dict[str, Any], reason: str) -> dict[str, Any] | None:
         inst = inst_from(t)

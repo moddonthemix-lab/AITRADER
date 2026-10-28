@@ -30,7 +30,11 @@ These are enforced in code. Trader explains them; he never bends them.
 ## Where Trader trades
 
 - **Daily and 4-hour setups only.** No weekly setups (`strat.SETUP_TFS`).
-- **Inside-bar setups only** (`TRADER_INSIDE_ONLY=1`): the setup bar must be an inside bar (3-1-2, 2-1-2, 1-1-2 …).
+- **The focus** (`TRADER_INSIDE_ONLY=1`): daily inside bars, and 3-1-2 setups on the 4-hour.
+- **Entry on the 5-minute confirmation** (`TRADER_ENTRY_CONFIRM=5m`): from the 9:30 open, a finished 5-minute
+  candle has to CLOSE beyond the trigger before Trader enters.
+- **Invalidation:** if a finished 5-minute candle closes back through the trigger (back inside the setup bar), Trader
+  sells at market. Reason: `invalid`.
 - **Bitcoin (BTC) on the main Hyperliquid market**, only on **daily** levels (`TRADER_CRYPTO=BTC`).
 - Stocks and stock indexes on the HIP-3 markets, as before.
 

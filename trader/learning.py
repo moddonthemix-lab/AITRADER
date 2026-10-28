@@ -77,8 +77,9 @@ def recent_lessons(j: Journal, n: int = 8) -> list[str]:
 def lesson_prompt(trade: dict[str, Any], playbook: str) -> str:
     return (
         "You are reviewing one of your own closed trades. Write ONE lesson in 2-3 sentences: what the Strat "
-        "said, what actually happened, and one concrete thing to keep or change next time. Be specific to the "
-        "numbers. Don't suggest breaking the rules (the -10% hard stop, fee-aware targets, inside bars first).\n\n"
+        "said, and what actually happened, using ONLY the numbers given below. Do not invent price levels, and do "
+        "not propose new stop, target or trigger numbers. Do not suggest breaking the rules (the -10% hard stop, "
+        "fee-aware targets, inside bars first, the 5-minute invalidation).\n\n"
         f"Trade: {trade['side']} {trade['coin']} — {trade['tf']} {trade['setup']} (grade {trade['grade']}, "
         f"{'inside bar' if trade['inside'] else 'not an inside bar'}, "
         f"{'with' if trade['with_continuity'] else 'without'} continuity, setup-bar volume x{trade['rvol'] or '?'}).\n"

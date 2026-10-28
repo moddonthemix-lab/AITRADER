@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS trades (
     stop REAL NOT NULL, initial_stop REAL NOT NULL, hard_stop REAL NOT NULL, target REAL,
     fees REAL DEFAULT 0, leverage INTEGER DEFAULT 1,
     peak REAL, trail_active INTEGER DEFAULT 0,
+    trigger REAL,                       -- the setup's trigger (perp price): invalid if a 5-min close goes back through it
     protection TEXT DEFAULT '{}',       -- exchange order ids (live)
     opened_at TEXT NOT NULL, closed_at TEXT,
     exit REAL, exit_reason TEXT,        -- target | trail | stop | hard_stop | manual
@@ -113,7 +114,7 @@ class Journal:
 
     def _migrate(self) -> None:
         """Columns added after a journal was first made (an existing journal keeps its data)."""
-        added = {"trades": {"leverage": "INTEGER DEFAULT 1"}}
+        added = {"trades": {"leverage": "INTEGER DEFAULT 1", "trigger": "REAL"}}
         for table, cols in added.items():
             have = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             for col, kind in cols.items():

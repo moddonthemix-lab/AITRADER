@@ -98,7 +98,7 @@ class Settings:
     stocks_only: bool = field(default_factory=lambda: _flag("TRADER_STOCKS_ONLY", "1"))
     # Crypto on Hyperliquid's main market, traded on daily setups only. Blank = no crypto.
     crypto: list[str] = field(default_factory=lambda: _list("TRADER_CRYPTO", "BTC"))
-    # Only inside-bar setups (3-1-2, 2-1-2, 1-1-2 …) are taken. Set 0 to take all daily/4-hour setups.
+    # The focus: daily inside bars, and 3-1 setups (3-1-2) on the 4-hour. Set 0 to take all daily/4-hour setups.
     inside_only: bool = field(default_factory=lambda: _flag("TRADER_INSIDE_ONLY", "1"))
 
     # ---- the boss's hard rules
@@ -142,11 +142,11 @@ class Settings:
     # ---- the trading day (New York time, weekdays)
     # Scanning starts at the open; entries from 9:40 (the second 5-minute candle has closed) until 15:45.
     scan_start: str = field(default_factory=lambda: _env("TRADER_SCAN_START", "09:30"))
-    window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:40"))
+    window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:30"))
     window_end: str = field(default_factory=lambda: _env("TRADER_WINDOW_END", "15:45"))
     # Entry: "break" = the moment price trades through the setup bar's high/low, wicks included
     # (thestrat.ai: "the break is the confirmation"). "5m" = wait for a 5-minute candle to close beyond it.
-    entry_confirm: str = field(default_factory=lambda: _env("TRADER_ENTRY_CONFIRM", "break").strip().lower())
+    entry_confirm: str = field(default_factory=lambda: _env("TRADER_ENTRY_CONFIRM", "5m").strip().lower())
     # Before arming a plan, check it against the boss's Strat documents (when there are any): a setup the
     # documents rule out is skipped, with the document's reason.
     doc_check: bool = field(default_factory=lambda: _flag("TRADER_DOC_CHECK", "1"))
