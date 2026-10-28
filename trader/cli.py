@@ -63,7 +63,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
 
     line(sys.version_info >= (3, 10), f"Python {sys.version.split()[0]} (3.10+ needed)")
     line(True, f"Mode: {settings.mode.upper()} ({'real money — every trade waits for the boss' if settings.live else 'pretend money'})")
-    line(True, f"Rules: hard stop -{settings.hard_stop_pct:g}%, min {settings.min_trades_week} trades/week, "
+    line(True, f"Rules: hard stop -{settings.hard_stop_pct:g}%, no forced trades, "
                f"min R:R {settings.min_rr:g} after {settings.fee_pct:g}%/side fees, inside bars first, "
                f"leverage {'max per market' if settings.leverage >= 1000 else str(settings.leverage) + 'x'} "
                f"(stop always inside liquidation), trades with {settings.account_use_pct:g}% of the account, risk {settings.risk_per_trade_pct:g}%/trade")
@@ -250,7 +250,7 @@ def cmd_scan(_: argparse.Namespace) -> int:
 
     j = Journal(settings.db_file)
     sc = strategy.scan(hl.universe(), j, ny_today(), j.trades_opened_since(week_start(), settings.mode))
-    print(f"Grades taken today: {'/'.join(sc.allowed_grades)}{' (behind pace for the weekly minimum)' if sc.behind_pace else ''}")
+    print(f"Grades taken today: {'/'.join(sc.allowed_grades)}")
     for c in sc.ranked[:10]:
         print("•", c.summary())
     ps = sc.pass_summary()

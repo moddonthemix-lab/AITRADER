@@ -100,8 +100,3 @@ def test_full_max_leverage_and_the_stop_always_inside_liquidation():
         settings.leverage = old
 
 
-def test_weekly_pace():
-    mon, wed, fri = date(2026, 10, 12), date(2026, 10, 14), date(2026, 10, 16)
-    assert not risk.behind_pace(0, mon)
-    assert risk.behind_pace(0, wed) and not risk.behind_pace(1, wed)
-    assert risk.behind_pace(1, fri) and not risk.behind_pace(2, fri)

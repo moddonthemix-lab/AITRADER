@@ -210,7 +210,7 @@ function render(s) {
   $("t-equity").textContent = usd(s.equity);
   $("t-today").replaceChildren(signed(s.today_pnl));
   $("t-total").replaceChildren(signed(s.total_pnl));
-  $("t-week").textContent = `${s.week_trades} of ${s.min_week}`;
+  $("t-week").textContent = `${s.week_trades} this week`;
   const st = s.stats; $("t-win").textContent = st.trades ? `${Math.round(st.win_rate * 100)}% · ${st.avg_r >= 0 ? "+" : ""}${st.avg_r}R` : "—";
   const r = s.rules;
   $("rules").textContent = `Rules: hard stop −${r.hard_stop_pct}% (fees in) · take profit at the Strat target · trailing stop ${r.trail} · inside bars first · R:R ≥ ${r.min_rr} after ${r.fee_pct}%/side fees · ${r.risk_pct}% risk per trade · leverage ${r.leverage === "max" ? "full max per market (stop always inside liquidation)" : r.leverage + "x"} · entries ${r.window}.`;
@@ -249,7 +249,7 @@ function render(s) {
 
 function renderScan(sc) {
   if (!sc) { $("scan").replaceChildren(el("div", { className: "muted small", style: "margin-top:8px" }, "Press “Scan now” (about half a minute).")); return; }
-  const kids = [el("div", { className: "small", style: "margin:8px 0" }, `Scanned ${fmtTime(sc.at)} · grades taken today: ${sc.grades.join("/")}${sc.behind_pace ? " (behind pace for the weekly minimum)" : ""}`)];
+  const kids = [el("div", { className: "small", style: "margin:8px 0" }, `Scanned ${fmtTime(sc.at)} · grades taken today: ${sc.grades.join("/")}`)];
   if (sc.setups.length) kids.push(el("ul", { className: "list" }, ...sc.setups.map(x => el("li", {},
     el("span", { className: "chip" }, `${x.grade} · ${x.score}%` + (x.inside ? " · inside bar" : "")), x.summary,
     el("div", { className: "small muted", style: "margin-top:4px" }, x.parts.map(p => `${p[0]} ${p[1]}/${p[2]}`).join(" · "))))));

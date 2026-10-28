@@ -4,7 +4,7 @@ market reason.
 Grades (only A and B are ever traded; C never):
     A  full timeframe continuity (FTFC) in the trade's direction, net R:R after fees ≥ TRADER_MIN_RR
     B  the bias leans the trade's way (most timeframes agree), net R:R after fees ≥ TRADER_MIN_RR
-       — taken only when Trader is behind pace for the weekly minimum (2 trades)
+       — taken as a best setup (A or B), never forced to meet a weekly count
 Ranking inside a grade: inside-bar setups first (TRADER_PRIORITY=inside), then the learned edge of that
 pattern, then reward:risk, then volume, then the bigger timeframe.
 
@@ -119,7 +119,6 @@ class Scan:
     reads: list[Read]
     ranked: list[Candidate]
     allowed_grades: tuple[str, ...]
-    behind_pace: bool
 
     @property
     def tradeable(self) -> list[Candidate]:
@@ -256,9 +255,8 @@ def scan(instruments: list[Instrument], j: Journal, today: date, trades_this_wee
          chart_source: Callable | None = None, perp_source: Callable | None = None) -> Scan:
     reads = [evaluate(read_market(i, chart_source, perp_source), j) for i in instruments]
     ranked = sorted((c for r in reads for c in r.candidates), key=lambda c: c.key, reverse=True)
-    behind = risk.behind_pace(trades_this_week, today)
     allowed = ("A", "B")  # the best setups only: A (score 80+) and B (score TRADER_MIN_SCORE+); never C
     for r in reads:
         if r.incident:
             log.warning("incident: %s", r.incident)
-    return Scan(reads, ranked, allowed, behind)
+    return Scan(reads, ranked, allowed)

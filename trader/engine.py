@@ -176,7 +176,7 @@ class Engine:
             instruments = []
         if not instruments:
             self.incident(today, "no markets to scan (Hyperliquid's market list was empty or unreachable)")
-            sc = strategy.Scan([], [], ("A",), False)
+            sc = strategy.Scan([], [], ("A",))
             self.last_scan = sc
             return sc
         sc = strategy.scan(instruments, self.j, today, self.trades_this_week(now),
@@ -621,7 +621,7 @@ class Engine:
         money = "PAPER (pretend money)" if self.mode == "paper" else "LIVE (real money)"
         head = (f"{day.isoformat()} — {money}: today {pnl_day:+.2f} USD after fees, running total {total:+.2f} USD"
                 + (f", account {equity:,.2f} USD" if equity is not None else "")
-                + f". This week: {wk} trade{'s' if wk != 1 else ''} (minimum {settings.min_trades_week}).")
+                + f". This week: {wk} trade{'s' if wk != 1 else ''}.")
         lines = [head, ""]
         for t in opened:
             lines.append(f"OPENED {t['side']} {t['coin']} @ {t['entry']:g} — {t['notes'] or t['setup']} "
@@ -656,12 +656,10 @@ class Engine:
         return "\n".join(x for x in lines if x is not None).strip(), pnl_day, len(touched), equity
 
     def week_line(self, day: date, wk: int) -> str:
-        if wk >= settings.min_trades_week:
-            return f"Week: {wk} trades — the weekly minimum of {settings.min_trades_week} is met."
+        """The week so far, for information only: there is no minimum to meet, so no trade is forced."""
         start = week_start(day)
         rows = self.j.all("SELECT reason, COUNT(*) AS n FROM passes WHERE day >= ? AND day <= ? GROUP BY reason "
                           "ORDER BY n DESC", (start.isoformat(), day.isoformat()))
         why = ", ".join(f"{strategy.MARKET_REASONS[r['reason']].split(' — ')[0]} ({r['n']} day{'s' if r['n'] != 1 else ''})"
                         for r in rows) or "no setup in the window"
-        return (f"Week: {wk} of the {settings.min_trades_week}-trade minimum. Market reasons: {why}. "
-                "B-grade setups were allowed once behind pace; no C-grade setup was forced.")
+        return f"Week: {wk} trade{'s' if wk != 1 else ''}. Market reasons for the passes: {why}."

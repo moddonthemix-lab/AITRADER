@@ -44,7 +44,7 @@ def test_the_page_and_its_state(server):
     assert code == 200 and b"Strat documents" in html
     code, body = call(base, "/api/state")
     s = json.loads(body)
-    assert code == 200 and s["mode"] == "paper" and s["equity"] == 1000 and s["min_week"] == 2
+    assert code == 200 and s["mode"] == "paper" and s["equity"] == 1000
     assert any(d["name"] == "01_THE_STRAT_PLAYBOOK.md" and not d["yours"] for d in s["docs"])
 
 

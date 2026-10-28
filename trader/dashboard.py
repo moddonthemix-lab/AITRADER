@@ -1,6 +1,6 @@
 """Trader's dashboard: http://localhost:8767 (AMO is 8765, Scholar 8766).
 
-What it shows: money mode, account, today's and total P&L, the weekly minimum, the P&L chart, open
+What it shows: money mode, account, today's and total P&L, trades this week, the P&L chart, open
 positions (with a Close button), armed plans, the last scan (ranked setups, the market reason to pass,
 incidents), his journal, what he's learned per pattern, his lessons — and the Strat documents.
 
@@ -93,7 +93,7 @@ class Dashboard:
         today_pnl = round(sum(t["pnl"] or 0 for t in j.closed_on(today) if t["mode"] == mode), 2)
         return {
             "mode": mode, "equity": equity, "today_pnl": today_pnl, "total_pnl": j.realized_pnl(mode),
-            "week_trades": j.trades_opened_since(week_start(today), mode), "min_week": settings.min_trades_week,
+            "week_trades": j.trades_opened_since(week_start(today), mode),
             "rules": {"hard_stop_pct": settings.hard_stop_pct, "min_rr": settings.min_rr, "fee_pct": settings.fee_pct,
                       "risk_pct": settings.risk_per_trade_pct, "leverage": "max" if settings.leverage >= 1000 else settings.leverage,
                       "trail": f"on once in profit after fees (locks +{settings.trail_lock_pct:g}% after fees), "
@@ -196,7 +196,7 @@ class Dashboard:
         sc = strategy.scan(e.universe(), e.j, today, e.trades_this_week(), e.chart_source, e.perp_source)
         ps = sc.pass_summary()
         self._last_scan = {"at": datetime.now(NY).isoformat(timespec="minutes"),
-                           "grades": list(sc.allowed_grades), "behind_pace": sc.behind_pace,
+                           "grades": list(sc.allowed_grades),
                            "setups": [{"coin": c.inst.coin, "grade": c.grade, "inside": c.setup.inside,
                                        "score": c.score, "parts": c.parts, "summary": c.summary()}
                                       for c in sc.ranked[:10]],

@@ -47,8 +47,8 @@ These are enforced in code. Trader explains them; he never bends them.
   A setup without full timeframe continuity is C.
 - **At most 2 trades a day** (`TRADER_MAX_TRADES_DAY`), only when the setups are there. One trade per ticker
   per day: once a ticker has been traded or planned that day, it isn't taken again.
-- **Minimum 2 trades per week** (`TRADER_MIN_TRADES_WEEK`) is still tracked and reported, but it no longer
-  lowers the grade bar: the boss's focus takes priority over the weekly count.
+- **No minimum trade count.** Trader never forces a trade to meet a weekly number. The trades this week are
+  shown for information, with the market reasons for the passes. Bad trades are never taken to hit a count.
 - **Pass discipline.** A day without a trade needs a **market** reason:
   - *chop* — inside/outside bars on the setup timeframes and no continuity
   - *conflicting MTF* — the timeframes disagree; no continuity behind any setup

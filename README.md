@@ -15,7 +15,7 @@ the budget you set, or the local model. His journal lives in `#trades`.
 |---|---|
 | **Reads the markets** | Every liquid stock/index perp on Hyperliquid's stock markets (`xyz`, `mkts`, `km`, `cash`, `flx`), most liquid market per ticker. The Strat on Quarterly → 60-minute: 1 / 2U / 2D / 3, full timeframe continuity, setups, targets. Volume on every bar. |
 | **Inside bars first** | 3-1-2, 2-1-2, 1-1-2 rank above every other setup. Volume is a tie-breaker, never the reason. |
-| **Grades** | A = full timeframe continuity + R:R ≥ 1.5 after fees. B = leaning continuity (only when behind on the weekly minimum). C = never. |
+| **Grades** | A = full timeframe continuity + R:R ≥ 1.5 after fees. B = leaning continuity, score 60+. C = never. |
 | **Game plan** | After the close (16:10) and before the open (9:00): the inside bars ready for the next session, both triggers, stops, targets and the favoured side. Posted in `#trades` and on the dashboard. |
 | **Enters** | On the Strat trigger: the moment price breaks the setup bar's **high or low, wicks included** ("the break is the confirmation"). Scanning from 9:30, entries 9:40–15:45 New York. Checked against your Strat documents first. No chasing. |
 | **Exits** | **Hard stop -10%** (fees in, also a stop order on the exchange). **Take profit** at the Strat target. **Trailing stop** on as soon as a trade is in profit after fees: it locks a green close, then follows the best price 1R behind. |
@@ -31,7 +31,7 @@ the budget you set, or the local model. His journal lives in `#trades`.
 `trader run` also starts his own dashboard (AMO is on 8765, Scholar on 8766). Open **http://localhost:8767**
 on the Mac:
 
-- **Money:** paper or live, account value, today's and total P&L, trades this week vs the minimum of 2,
+- **Money:** paper or live, account value, today's and total P&L, trades this week (no minimum to meet),
   and the P&L chart (hover for each day, or "Show as table").
 - **Positions and plans:** open positions with live P&L and a **Close** button, plus plans waiting for a
   trigger or for your 👍.
@@ -138,7 +138,6 @@ All of these are settings in `.env` (see `.env.example`), enforced in code ([`tr
 | Rule | Setting | Default |
 |---|---|---|
 | Hard stop | `TRADER_HARD_STOP_PCT` | 10 (% against the entry price, fees in) |
-| Minimum trades per week | `TRADER_MIN_TRADES_WEEK` | 2 |
 | Inside bars first | `TRADER_PRIORITY` | inside |
 | Minimum reward:risk after fees | `TRADER_MIN_RR` | 1.5 |
 | Trailing stop | `TRADER_TRAIL_START_PCT` / `TRADER_TRAIL_LOCK_PCT` / `TRADER_TRAIL_R` | on once in profit after fees, locks a green close, 1R behind |

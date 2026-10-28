@@ -19,9 +19,7 @@ Only setups whose net reward after fees is at least TRADER_MIN_RR times the net 
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from datetime import date
 from typing import Any
 
 from .config import settings
@@ -189,13 +187,3 @@ def manage(t: dict[str, Any], price: float, sz_decimals: int = 2) -> Step:
     return Step(stop, peak, active, reason, moved)
 
 
-# ------------------------------------------------------------------ the weekly minimum
-def expected_by(day: date) -> int:
-    """Trades Trader should have by this weekday to stay on pace for the weekly minimum
-    (2/week: Mon–Tue 0, Wed–Thu 1, Fri 2)."""
-    wd = min(day.weekday(), 4)
-    return math.floor(settings.min_trades_week * wd / 4)
-
-
-def behind_pace(trades_this_week: int, day: date) -> bool:
-    return trades_this_week < expected_by(day)
