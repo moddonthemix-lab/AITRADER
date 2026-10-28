@@ -86,10 +86,12 @@ class HubClient:
         except (urllib.error.URLError, OSError) as e:
             raise HubOffline(f"can't reach the hub at {self.url}: {e}") from None
 
-    def _send(self, channel, type_, text=None, data=None, reply_to=None, files=None):
+    def _send(self, channel, type_, text=None, data=None, reply_to=None, files=None, form=None):
         body = {"type": type_, "data": dict(data or {})}
         if files:
             body["data"]["files"] = [f["id"] if isinstance(f, dict) else int(f) for f in files]
+        if form:
+            body["data"]["form"] = form
         if self.brain:
             body["data"]["brain"] = self.brain
         if text is not None:
@@ -259,8 +261,8 @@ class HubClient:
         return self._req("GET", "/api/brief")
 
     # -- writing (one helper per message type)
-    def post(self, channel, text, reply_to=None, files=None):
-        return self._send(channel, "post", text, reply_to=reply_to, files=files)
+    def post(self, channel, text, reply_to=None, files=None, form=None):
+        return self._send(channel, "post", text, reply_to=reply_to, files=files, form=form)
 
     def ask(self, channel, text, to=None, reply_to=None):
         return self._send(channel, "question", text, {"to": to} if to else {}, reply_to)
@@ -278,10 +280,20 @@ class HubClient:
     def update_task(self, task_id, status, note=""):
         return self._write(f"/api/tasks/{int(task_id)}/update", {"status": status, "note": note})
 
-    def post_result(self, task_id, summary, artifacts=None, files=None, channel="tasks"):
-        """files: uploaded to the task's channel (see upload_file); results go into the task's thread."""
+    def post_result(self, task_id, summary="", artifacts=None, files=None, channel="tasks", form=None):
+        """files: uploaded to the task's channel (see upload_file); results go into the task's thread.
+        form: a filled-in shared form {"name", "items", "note"} (required when the task has expects_form)."""
         return self._send(channel, "result", data={"task_id": task_id, "summary": summary,
-                                                   "artifacts": artifacts or []}, files=files)
+                                                   "artifacts": artifacts or []}, files=files, form=form)
+
+    # -- shared forms
+    def forms(self):
+        """Every shared form: [{name, title, description, list, allow_empty, fields: [...]}]."""
+        return self._req("GET", "/api/forms")["forms"]
+
+    def form(self, name):
+        """One form, including its json_schema (give that to the AI so its answer has the right shape)."""
+        return self._req("GET", f"/api/forms/{urllib.parse.quote(name)}")
 
     def post_finding(self, channel, claim, status, confidence, sources=None, reply_to=None, files=None):
         return self._send(channel, "finding", data={"claim": claim, "status": status, "confidence": confidence,

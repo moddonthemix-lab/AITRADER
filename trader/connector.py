@@ -25,6 +25,7 @@ from typing import Any
 from . import backtest, hyperliquid as hl, learning, strat
 from .brain import system
 from .engine import PLAN_RE, Engine
+from .hubplans import TradePlans, is_trade_plan
 from .journal import ny_today
 from .knowledge import library
 
@@ -77,6 +78,7 @@ class Connector:
         self._stop = threading.Event()
         self._known: tuple[float, dict[str, hl.Instrument]] = (0.0, {})
         self._last_resume = time.time()
+        self.plans = TradePlans(engine, self.hub, self.known)  # Amo's "Trade plan" tasks (hubplans.py)
 
     # ------------------------------------------------------------------ running
     def start(self) -> threading.Thread:
@@ -103,6 +105,7 @@ class Connector:
                     self.refresh()
                 if self.retry or any(e.get("kind") in ("inbox", "task") for e in events):
                     self.process_inbox()
+                self.settle_plans()
                 if time.time() - self._last_resume > 600:  # research parked while offline / out of budget
                     self._last_resume = time.time()
                     self.resume_blocked()
@@ -155,6 +158,7 @@ class Connector:
         except HubOffline:
             return 0
         n = 0
+        self.sync_plans()
         for item in reversed(items or []):  # oldest first
             try:
                 self.handle(item)
@@ -174,6 +178,19 @@ class Connector:
                 pass
         return n
 
+    def sync_plans(self) -> None:
+        """Ask the hub which Trade plans are active now (never a cached copy). Errors are logged, not raised."""
+        try:
+            self.plans.sync()
+        except Exception as e:  # noqa: BLE001
+            log.info("hub: couldn't sync the trade plans (%s)", type(e).__name__)
+
+    def settle_plans(self) -> None:
+        try:
+            self.plans.settle()
+        except Exception as e:  # noqa: BLE001
+            log.info("hub: couldn't post a trade plan result (%s)", type(e).__name__)
+
     def on_hub_error(self, e: Any, item: dict[str, Any] | None = None) -> None:
         if e.status == 429:
             self.quiet_until = time.time() + 60
@@ -187,6 +204,8 @@ class Connector:
     def handle(self, item: dict[str, Any]) -> None:
         kind, msg, task = item.get("kind"), item.get("message"), item.get("task")
         if (msg or {}).get("demo") or (task or {}).get("demo"):
+            return
+        if task and is_trade_plan(task):  # handled from the hub's active tasks (see process_inbox)
             return
         if kind == "feedback" and msg:
             return self.feedback(msg, item)
@@ -247,8 +266,10 @@ class Connector:
     def work_on_task(self, task: dict[str, Any], local_only: bool, resume: bool = False) -> None:
         if task.get("status") not in (("blocked",) if resume else ("open", "accepted")):
             return
+        if is_trade_plan(task):  # never answered as a chat task: the plan is held, then posted after the close
+            return
         text = f"{task.get('title', '')}. {task.get('details') or ''}".strip(" .")
-        if task.get("routine_id") or (task.get("title") or "").lower().startswith("daily trading report"):
+        if (task.get("title") or "").lower().startswith("daily trading report"):
             self.hub.update_task(task["id"], "in_progress", "Writing today's report.")
             self.engine.report(ny_today(), task_id=task["id"])
             return

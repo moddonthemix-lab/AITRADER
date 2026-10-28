@@ -146,9 +146,9 @@ def test_yesterdays_candle_doesnt_confirm_today(journal, wednesday, five_min):
     assert not journal.open_trades()
 
 
-def test_no_entries_before_940_or_after_1545():
-    assert not entries_open(datetime(2026, 10, 14, 9, 35, tzinfo=NY))
-    assert entries_open(datetime(2026, 10, 14, 9, 40, tzinfo=NY))
+def test_no_entries_before_930_or_after_1545():
+    assert not entries_open(datetime(2026, 10, 14, 9, 25, tzinfo=NY))
+    assert entries_open(datetime(2026, 10, 14, 9, 35, tzinfo=NY))
     assert entries_open(datetime(2026, 10, 14, 15, 45, tzinfo=NY))
     assert not entries_open(datetime(2026, 10, 14, 15, 50, tzinfo=NY))
 

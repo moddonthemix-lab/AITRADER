@@ -367,12 +367,16 @@ class Engine:
                 log.info("hub: couldn't update task %s (%s)", task_id, type(e).__name__)
 
     # ------------------------------------------------------------------ entries
+    @staticmethod
+    def hub_plan(p: dict[str, Any]) -> bool:
+        return json.loads(p["data"]).get("source") == "hub"
+
     def expire_plans(self, now: datetime) -> None:
         for p in self.j.all("SELECT * FROM plans WHERE status IN ('waiting_approval','armed')"):
             if datetime.fromisoformat(p["expires_at"]) <= now:
                 self.j.update("plans", p["id"], {"status": "expired", "note": "the setup's bar closed without a trigger",
                                                  "updated_at": now_iso()})
-                if p["status"] == "armed":  # an approved plan is closed off; an unapproved one just lapses
+                if p["status"] == "armed" and not self.hub_plan(p):  # an approved plan is closed off; an unapproved one just lapses
                     self._task_update(p["task_id"], "done", "Expired without triggering. No trade.")
 
     def watch_plans(self, now: datetime) -> None:
@@ -387,7 +391,8 @@ class Engine:
             if (px - d["stop"]) * sign <= 0:
                 self.j.update("plans", p["id"], {"status": "invalid", "note": f"the stop side broke first ({px:g})",
                                                  "updated_at": now_iso()})
-                self._task_update(p["task_id"], "done", f"Cancelled: price hit the stop side ({px:g}) before the trigger.")
+                if not self.hub_plan(p):  # a hub Trade plan is posted as one result after the close (hubplans.py)
+                    self._task_update(p["task_id"], "done", f"Cancelled: price hit the stop side ({px:g}) before the trigger.")
                 continue
             triggered = self.confirmed(d, now, px, sign)
             chase = settings.max_chase_r * abs(d["entry"] - d["stop"])
