@@ -72,3 +72,24 @@ def test_setup_not_on_hyperliquid_is_reported_not_traded(journal):
     form = hub.results[0]["form"]
     assert form["name"] == "trade_report" and form["items"][0]["outcome"] == "NOT AVAILABLE"
     assert form["items"][0]["symbol"] == "ZZZZ"
+
+
+def test_setups_are_read_from_the_text_when_there_is_no_form():
+    text = ("Amo's plan\n--- From Amo's result ---\n"
+            "symbol: AAPL\ntimeframe: daily\npattern: 2-1-2 (inside bar)\ndirection: long\n"
+            "trigger: 182.40\nstop: 179.80\ntargets: 185.10, 187.50\nwhy: inside bar\n\n"
+            "symbol: NVDA\ntimeframe: 4h\npattern: 3-1-2\ndirection: short\ntrigger: 900\nstop: 910\ntargets: 880\n")
+    items = hubplans.setups_from_text(text)
+    assert [i["symbol"] for i in items] == ["AAPL", "NVDA"]
+    assert items[0]["targets"] == [185.10, 187.50] and items[1]["direction"] == "short"
+
+
+def test_unreadable_text_blocks_the_plan_instead_of_saying_no_setups(journal):
+    now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
+    task = plan(21, items=[])
+    task["details"] = "Amo's plan\n--- From Amo's result ---\nLooks good to me, trade the inside bars."
+    hub = FakeHub([task])
+    tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
+    tp.sync()
+    assert hub.results == []
+    assert hub.updates[-1][1] == "blocked" and "couldn't read the setups" in hub.updates[-1][2]

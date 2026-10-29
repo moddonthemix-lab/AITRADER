@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, time as dtime
 from typing import Any, Callable
 
@@ -34,6 +35,36 @@ MAX_BASIS = 0.03                      # Amo's price must be within 3% of Hyperli
 
 def is_trade_plan(task: dict[str, Any]) -> bool:
     return (task.get("title") or "").strip().lower().startswith(TITLE)
+
+
+SECTION = re.compile(r"---\s*From Amo's result\s*---?", re.I)
+KEYS = re.compile(r"^\s*(symbol|ticker|timeframe|pattern|direction|trigger|stop|targets?|invalidation|continuity|"
+                  r"confidence|why)\s*[:=]\s*(.+?)\s*$", re.I | re.M)
+
+
+def setups_from_text(details: str) -> list[dict[str, Any]]:
+    """Setups written as key: value lines (symbol, timeframe, pattern, direction, trigger, stop, targets, why), one
+    block per setup, a new block starting at each 'symbol:' line. Anything else is not guessed at: the plan is blocked."""
+    body = SECTION.split(details, maxsplit=1)[-1]
+    blocks: list[dict[str, str]] = []
+    for key, value in KEYS.findall(body):
+        k = key.lower().rstrip("s") if key.lower() == "targets" else key.lower()
+        if k in ("symbol", "ticker") or not blocks:
+            blocks.append({})
+        blocks[-1][k] = value
+    out = []
+    for b in blocks:
+        try:
+            targets = [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", b.get("target", ""))]
+            item = {"symbol": b.get("symbol", b.get("ticker", "")), "timeframe": b.get("timeframe", "").lower(),
+                    "pattern": b.get("pattern", ""), "direction": b.get("direction", "").lower(),
+                    "trigger": float(b["trigger"]), "stop": float(b["stop"]), "targets": targets,
+                    "why": b.get("why", ""), "continuity": b.get("continuity", "")}
+        except (KeyError, ValueError):
+            continue  # a block without a number for trigger or stop is not a setup
+        if item["symbol"] and item["timeframe"] in TF_OF and item["direction"] in ("long", "short") and targets:
+            out.append(item)
+    return out
 
 
 class TradePlans:
@@ -75,8 +106,11 @@ class TradePlans:
     def start(self, task: dict[str, Any]) -> None:
         pid = str(task["id"])
         items = (task.get("form") or {}).get("items") or []
-        if not items:  # nothing to trade: say so, in the task's own form
-            self._post(task, [], "No setups in this plan.")
+        if not items:  # no form yet: the setups are in the task's text (after "--- From Amo's result")
+            items = setups_from_text(task.get("details") or "")
+        if not items:  # never "no setups" without checking both places: the plan can't be read, so say that
+            self.hub.update_task(task["id"], "blocked", "I couldn't read the setups in this plan (no form, and the text "
+                                                          "isn't in the key: value format). Amo needs to resend it.")
             return
         rows = [self.plan_item(item, task) for item in items[:5]]
         self.hub.update_task(task["id"], "in_progress", f"Holding {len(rows)} setup(s) for the next session.")
