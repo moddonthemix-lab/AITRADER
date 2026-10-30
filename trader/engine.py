@@ -156,7 +156,7 @@ class Engine:
             if not last or (now - datetime.fromisoformat(last)).total_seconds() >= settings.scan_minutes * 60 - 5:
                 self.scan(now)
                 self.j.set("last_scan_at", now.isoformat())
-            self.watch_plans(now)
+        self.watch_plans(now)  # every minute, at any hour: plans trigger when the level is hit
         self.maybe_report(now)
 
     # ------------------------------------------------------------------ the game plan (before the open / after the close)
