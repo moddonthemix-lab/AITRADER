@@ -44,9 +44,8 @@ def _hm(s: str) -> dtime:
 
 
 def in_window(now: datetime) -> bool:
-    """Scanning hours: from the open (9:30) to the last entry time (15:45), weekdays. Around the clock: always."""
-    if settings.around_the_clock:
-        return True
+    """Scanning hours: from the open (9:30) to the last entry time (15:45), weekdays. Stocks are scanned only then;
+    trades can still trigger at any hour (entries_open)."""
     now = now.astimezone(NY)
     return now.weekday() < 5 and _hm(settings.scan_start) <= now.time() <= _hm(settings.window_end)
 
