@@ -98,7 +98,8 @@ class Dashboard:
                       "risk_pct": settings.risk_per_trade_pct, "leverage": "max" if settings.leverage >= 1000 else settings.leverage,
                       "trail": f"on once in profit after fees (locks +{settings.trail_lock_pct:g}% after fees), "
                                f"{settings.trail_r:g}R behind",
-                      "window": f"{settings.window_start}–{settings.window_end} New York"},
+                      "window": ("24/7 (scanning 9:30–15:45 New York on market days)" if settings.around_the_clock
+                                  else f"{settings.window_start}–{settings.window_end} New York")},
             "hub": e.hub is not None,
             "positions": opened, "plans": plans, "trades": trades,
             "pnl_series": self.pnl_series(),
