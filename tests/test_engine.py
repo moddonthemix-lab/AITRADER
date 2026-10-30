@@ -4,6 +4,7 @@ from datetime import timedelta
 import pytest
 from conftest import DAILY_INSIDE, FakeBrain, FakeHub, FakeLiveBroker, failing_source, inst, source_for
 
+from trader.config import settings
 from trader.engine import Engine
 from trader.hyperliquid import PaperBroker
 
@@ -65,12 +66,22 @@ def test_plan_cancelled_when_the_stop_side_breaks_first(journal, wednesday):
     assert journal.one("SELECT status FROM plans")["status"] == "invalid" and not journal.open_trades()
 
 
-def test_plans_expire_when_the_bar_closes(journal, wednesday):
+def test_plans_expire_when_the_bar_closes(journal, wednesday, monkeypatch):
+    monkeypatch.setattr(settings, "around_the_clock", False)  # the session rule: the bar closes at 16:00
     prices = {"xyz:NVDA": 108.5}
     e, _ = paper(journal, prices, wednesday)
     e.scan(wednesday)
     e.expire_plans(wednesday.replace(hour=16, minute=1))
     assert journal.one("SELECT status FROM plans")["status"] == "expired"
+
+
+def test_around_the_clock_plans_stay_armed_through_the_night(journal, wednesday):
+    prices = {"xyz:NVDA": 108.5}
+    e, _ = paper(journal, prices, wednesday)
+    e.scan(wednesday)
+    e.expire_plans(wednesday.replace(hour=16, minute=1))  # after the close: still armed for the night
+    assert journal.one("SELECT status FROM plans")["status"] == "armed"
+    assert journal.one("SELECT expires_at FROM plans")["expires_at"].startswith("2026-10-15T16:00")  # the next session (Thursday) close
 
 
 def test_no_chasing_past_the_trigger(journal, wednesday):
@@ -130,7 +141,8 @@ def test_live_position_closed_by_the_exchange_stop_is_recorded(journal, wednesda
     assert t["exit_reason"] == "stop" and t["pnl"] < 0 and "exchange" in t["notes"]
 
 
-def test_approval_after_expiry_is_refused(journal, wednesday):
+def test_approval_after_expiry_is_refused(journal, wednesday, monkeypatch):
+    monkeypatch.setattr(settings, "around_the_clock", False)
     hub = FakeHub()
     clock = {"now": wednesday}
     e = Engine(journal, FakeLiveBroker({"xyz:NVDA": 108.5}), hub=hub, brain=FakeBrain(), instruments=lambda: [inst()],

@@ -61,6 +61,13 @@ def entries_open(now: datetime) -> bool:
 def bar_close(tf: str, now: datetime, crypto: bool = False) -> datetime:
     """When the bar the trigger lives in closes. After today's close, that's the next session's bar, so an evening
     plan waits for the next open (around the clock, stocks trade at any hour too)."""
+    if not crypto and tf in ("D", "4H") and settings.around_the_clock:
+        # Armed through the night: a plan made in a session stays live until the NEXT session's close, so it's
+        # ready if the trigger hits after the close or before the next open.
+        day = next_session(now)
+        if day == now.astimezone(NY).date():
+            day = next_session(datetime.combine(day + timedelta(days=1), dtime(0), NY))
+        return datetime.combine(day, dtime(16, 0), NY)
     if not crypto and tf in ("D", "4H"):
         day = next_session(now)
         if day != now.astimezone(NY).date():
