@@ -146,7 +146,7 @@ class Settings:
     max_chase_r: float = field(default_factory=lambda: float(_env("TRADER_MAX_CHASE_R", "0.25")))
 
     # ---- the trading day (New York time, weekdays)
-    # Scanning starts at the open; entries from 9:40 (the second 5-minute candle has closed) until 15:45.
+    # Scanning starts at the open; entries from 9:30 (the first 5-minute candle closes at 9:35) until 15:45.
     scan_start: str = field(default_factory=lambda: _env("TRADER_SCAN_START", "09:30"))
     window_start: str = field(default_factory=lambda: _env("TRADER_WINDOW_START", "09:30"))
     window_end: str = field(default_factory=lambda: _env("TRADER_WINDOW_END", "15:45"))

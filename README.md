@@ -17,7 +17,7 @@ the budget you set, or the local model. His journal lives in `#trades`.
 | **Inside bars first** | 3-1-2, 2-1-2, 1-1-2 rank above every other setup. Volume is a tie-breaker, never the reason. |
 | **Grades** | A = full timeframe continuity + R:R ≥ 1.5 after fees. B = leaning continuity, score 60+. C = never. |
 | **Game plan** | After the close (16:10) and before the open (9:00): the inside bars ready for the next session, both triggers, stops, targets and the favoured side. Posted in `#trades` and on the dashboard. |
-| **Enters** | On the Strat trigger: the moment price breaks the setup bar's **high or low, wicks included** ("the break is the confirmation"). Scanning from 9:30, entries 9:40–15:45 New York. Checked against your Strat documents first. No chasing. |
+| **Enters** | On the Strat trigger: the moment price breaks the setup bar's **high or low, wicks included** ("the break is the confirmation"). Scanning from 9:30, entries 9:30–15:45 New York. Checked against your Strat documents first. No chasing. |
 | **Exits** | **Hard stop -10%** (fees in, also a stop order on the exchange). **Take profit** at the Strat target. **Trailing stop** on as soon as a trade is in profit after fees: it locks a green close, then follows the best price 1R behind. |
 | **Minimum 2 trades/week** | Behind pace → B-grade setups are allowed. C-grade setups are never forced. |
 | **Pass discipline** | No trade = a *market* reason (chop, conflicting timeframes, no setup in the window…). A data problem is an *incident*, reported separately, never a pass. |

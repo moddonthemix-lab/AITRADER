@@ -82,7 +82,7 @@ his Strat documents: `trader docs add-thestrat`.)
   wick that opens and closes in the bottom 33% of its range".
 - **An equal high or low is still a 1:** "Matching an extreme without exceeding it 'didn't break the goal
   line'"; "exceeding an extreme by even two cents fully qualifies a 2".
-- **Entry hours: 9:40–15:45 New York.** Scanning starts at the 9:30 open.
+- **Entry hours: 9:30–15:45 New York.** Scanning starts at the 9:30 open.
 - **The opposite side first cancels it.** If price breaks the stop side before the trigger, the plan is
   cancelled. "A signal is only in force while its triggering bar is open."
 - **Your documents have a say.** Before a plan is armed, Trader checks it against your Strat documents.
