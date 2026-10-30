@@ -191,3 +191,22 @@ def test_documents_that_dont_object_let_the_rules_decide(journal, wednesday, tmp
                clock=lambda: wednesday)
     e.scan(wednesday)
     assert journal.one("SELECT status FROM plans")["status"] == "armed"
+
+
+def test_trades_trigger_overnight_and_premarket_when_around_the_clock(journal, wednesday, five_min, monkeypatch):
+    """Around the clock: a plan armed in the session enters on a 5-minute close through the trigger at 2 AM and 7 AM."""
+    from trader import engine as engine_module
+    monkeypatch.setattr(settings, "around_the_clock", True)
+    monkeypatch.setattr(engine_module, "now_iso", lambda: wednesday.astimezone(timezone.utc).isoformat(timespec="seconds"))
+    prices, candle = {"xyz:NVDA": 108.5}, {"bar": None}
+    e, clock = engine_with(journal, wednesday, prices, candle)
+    e.scan(wednesday)
+    for hour in (2, 7):  # 2 AM, then premarket
+        night = wednesday.replace(hour=hour, minute=0) + timedelta(days=1)
+        clock["now"] = night
+        prices["xyz:NVDA"] = 110.3
+        candle["bar"] = five(night, 110.4)
+        e.watch_plans(night)
+        if journal.open_trades():
+            break
+    assert journal.open_trades() and journal.open_trades()[0]["side"] == "long"
