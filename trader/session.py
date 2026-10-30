@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date, datetime, time as dtime, timedelta
 from typing import Any, Callable
 
-from .config import settings
+from .config import is_crypto, settings
 from .journal import NY
 from .market import Bar, candles
 
@@ -89,11 +89,6 @@ def prepare(bars: list[Bar], tf: str, now: datetime) -> list[Bar]:
     elif tf == "D" and _day(out[-1]) < n.date():
         out.append(_placeholder(out[-1], STEP[tf]))  # first minutes of the session: today's bar isn't in yet
     return out
-
-
-def is_crypto(symbol: str) -> bool:
-    """BTC, or BTC-USD, or hl's main-market coin: the crypto markets in TRADER_CRYPTO."""
-    return symbol.split(":")[-1].split("-")[0].upper() in {c.upper() for c in settings.crypto}
 
 
 def session_source(base: Callable[[str, str], tuple[list[Bar], dict[str, Any]]] | None,

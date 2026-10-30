@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from .config import is_crypto
 from .net import HttpError, get_json
 
 
@@ -96,7 +97,7 @@ def candles(symbol: str, tf: str = "D") -> tuple[list[Bar], dict[str, Any]]:
         out = _fetch(symbol, *INTRADAY)
     elif tf == "4H":
         hourly, meta = candles(symbol, "60")
-        out = (four_hour(hourly, meta), meta)
+        out = (four_hour_utc(hourly) if is_crypto(symbol) else four_hour(hourly, meta), meta)
     elif tf == "D":
         out = _fetch(symbol, *DAILY)
     elif tf in ("W", "M", "Q"):
@@ -105,6 +106,21 @@ def candles(symbol: str, tf: str = "D") -> tuple[list[Bar], dict[str, Any]]:
     else:
         raise ValueError(f"unknown timeframe {tf} (use 60, 4H, D, W, M or Q)")
     _cache[key] = (time.time(), out)
+    return out
+
+
+def four_hour_utc(hourly: list[Bar]) -> list[Bar]:
+    """Crypto 4-hour candles: the 4-hour blocks of the UTC clock (00, 04, 08 … UTC), around the clock."""
+    out: list[Bar] = []
+    current = None
+    for b in hourly:
+        k = b.t // 14400
+        if k != current:
+            out.append(Bar(b.t, b.o, b.h, b.l, b.c, b.v))
+            current = k
+        else:
+            last = out[-1]
+            last.h, last.l, last.c, last.v = max(last.h, b.h), min(last.l, b.l), b.c, last.v + b.v
     return out
 
 

@@ -29,7 +29,8 @@ from .hyperliquid import Broker, Instrument
 from .journal import NY, Journal, now_iso, ny_now, week_start
 from .knowledge import library
 from .market import Bar, DataFeedError
-from .session import is_crypto, session_source
+from .config import is_crypto
+from .session import session_source
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +58,10 @@ def entries_open(now: datetime) -> bool:
 def bar_close(tf: str, now: datetime, crypto: bool = False) -> datetime:
     """When the bar the trigger lives in closes: the plan expires then. Stocks: the New York session. Crypto
     (BTC): its daily bar closes at 00:00 UTC."""
-    if crypto:
+    if crypto:  # BTC: its 4-hour and daily bars close on the UTC clock
         utc = now.astimezone(timezone.utc)
+        if tf == "4H":
+            return datetime.fromtimestamp((int(utc.timestamp()) // 14400 + 1) * 14400, timezone.utc)
         return datetime.combine(utc.date() + timedelta(days=1), dtime(0), timezone.utc)
     now = now.astimezone(NY)
     close = datetime.combine(now.date(), dtime(16, 0), NY)
@@ -128,13 +131,12 @@ class Engine:
         kind = prep.due(now, self.j)
         if kind:
             self.game_plan(now, kind)
-        if in_window(now):
+        if in_window(now) or settings.crypto:  # stocks in the session window; BTC around the clock
             last = self.j.get("last_scan_at")
             if not last or (now - datetime.fromisoformat(last)).total_seconds() >= settings.scan_minutes * 60 - 5:
                 self.scan(now)
                 self.j.set("last_scan_at", now.isoformat())
-            if entries_open(now):
-                self.watch_plans(now)
+            self.watch_plans(now)
         self.maybe_report(now)
 
     # ------------------------------------------------------------------ the game plan (before the open / after the close)
@@ -179,6 +181,8 @@ class Engine:
             sc = strategy.Scan([], [], ("A",))
             self.last_scan = sc
             return sc
+        if not in_window(now):  # outside the session only BTC is scanned
+            instruments = [i for i in instruments if i.kind == "crypto"]
         sc = strategy.scan(instruments, self.j, today, self.trades_this_week(now),
                            session_source(self.chart_source, now), self.perp_source)
         self.last_scan = sc
@@ -382,6 +386,8 @@ class Engine:
     def watch_plans(self, now: datetime) -> None:
         for p in self.j.all("SELECT * FROM plans WHERE status = 'armed' ORDER BY id"):
             d = json.loads(p["data"])
+            if not entries_open(now) and not is_crypto(d["coin"]):
+                continue  # stocks are watched in their entry hours only; BTC around the clock
             try:
                 px = self.broker.mid(d["coin"])
             except Exception as e:  # noqa: BLE001

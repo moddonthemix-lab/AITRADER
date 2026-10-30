@@ -61,6 +61,11 @@ def _leverage(value: str) -> int:
     return MAX_LEVERAGE if v in ("max", "maximum", "") else max(1, int(float(v)))
 
 
+def is_crypto(symbol: str) -> bool:
+    """BTC, BTC-USD, or Hyperliquid's main-market coin: the markets in TRADER_CRYPTO (they trade around the clock)."""
+    return symbol.split(":")[-1].split("-")[0].upper() in {c.upper() for c in settings.crypto}
+
+
 def _list(key: str, default: str) -> list[str]:
     return [x.strip() for x in _env(key, default).split(",") if x.strip()]
 

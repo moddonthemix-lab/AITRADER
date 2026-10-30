@@ -35,7 +35,9 @@ These are enforced in code. Trader explains them; he never bends them.
   candle has to CLOSE beyond the trigger before Trader enters.
 - **Invalidation:** if a finished 5-minute candle closes back through the trigger (back inside the setup bar), Trader
   sells at market. Reason: `invalid`.
-- **Bitcoin (BTC) on the main Hyperliquid market**, only on **daily** levels (`TRADER_CRYPTO=BTC`).
+- **Bitcoin (BTC) on the main Hyperliquid market**, **daily and 4-hour inside bars only**, trading around the clock
+  (`TRADER_CRYPTO=BTC`). BTC's bars and plan expiry follow the UTC clock (4-hour blocks, daily at 00:00 UTC).
+- Stocks and indexes trade only in the session window (9:30–15:45 New York, weekdays).
 - Stocks and stock indexes on the HIP-3 markets, as before.
 
 ## Activity rules
