@@ -179,7 +179,7 @@ def signal_score(a: dict[str, Any], s: strat.Setup) -> tuple[int, list[tuple[str
     parts = [
         ("Base", 30, 30),
         (f"FTFC continuity {len(agree)}/{total}", round(35 * len(agree) / total) if total else 0, 35),
-        ("Full timeframe continuity", 10 if s.with_continuity else 0, 10),
+        ("Full timeframe continuity", 10 if a["continuity"].get("ftfc") == ("up" if up else "down") else 0, 10),
         ("Daily aligned", 5 if "D" in agree else 0, 5),
         ("Monthly aligned", 5 if "M" in agree else 0, 5),
         ("4H trigger (break of prior range)", 10 if s.tf == "4H" else 0, 10),

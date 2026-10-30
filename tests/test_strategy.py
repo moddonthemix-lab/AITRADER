@@ -77,7 +77,7 @@ def test_only_a_and_b_setups_are_taken_every_day(journal):
 
 
 def test_signal_score_adds_up_and_grades_by_threshold():
-    a = {"continuity": {"up": ["Q", "M", "W", "D", "4H"], "down": []}}
+    a = {"continuity": {"up": ["Q", "M", "W", "D", "4H"], "down": [], "ftfc": "up"}}
     s = strat.Setup(tf="D", name="3-1-2", direction="long", status="waiting", trigger=10, stop=9,
                     target=12, with_continuity=True, family="3-1-2")
     score, parts = strategy.signal_score(a, s)
