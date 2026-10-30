@@ -4,7 +4,7 @@ These are enforced in code. Trader explains them; he never bends them.
 
 ## Money rules
 
-- **Hard stop -10%.** No position may lose more than 10% of the money in it, fees included
+- **Hard stop -23%.** No position may lose more than 23% of the money in it, fees included
   (`TRADER_HARD_STOP_PCT`). The Strat stop (the other side of the setup bar) is used when it's tighter.
   If the Strat stop is further away than the hard stop allows, the setup is skipped — its risk doesn't fit.
   The hard stop is also checked directly on the live loss every minute, and a stop order sits on the
@@ -15,7 +15,7 @@ These are enforced in code. Trader explains them; he never bends them.
   the stop jumps to lock in the fees plus 0.05%: from then on the trade can only close green. Then it follows
   the best price 1R behind (R = entry-to-stop distance), and never moves back.
 - **Fees count.** Every target, R:R and P&L number is after the fee on the way in and out.
-- **Hard stop on price.** The -10% is measured on the position's price (fees included), so it means the
+- **Hard stop on price.** The -23% is measured on the position's price (fees included), so it means the
   same at any leverage.
 - **Leverage: always the full maximum each ticker allows** (`TRADER_LEVERAGE=max`): CBRS 10x, S&P 500 50x.
   If the Strat stop is past the liquidation price at that leverage, the stop is moved inside it (80% of the

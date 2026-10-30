@@ -2,7 +2,7 @@
 
 Every trading rule the boss set is a named setting here, so it is written down in one place:
 
-    TRADER_HARD_STOP_PCT=10        a position is closed before it loses more than 10% (fees included)
+    TRADER_HARD_STOP_PCT=23        a position is closed before it loses more than 23% (fees included)
     TRADER_PRIORITY=inside         inside-bar setups (3-1-2, 2-1-2, 1-1-2) come first
     take profit at the Strat target, and a trailing stop that only ever locks in a profit after fees
     passes need a market reason (chop, conflicting timeframes, no setup in the window) — never a data feed
@@ -109,7 +109,7 @@ class Settings:
     inside_only: bool = field(default_factory=lambda: _flag("TRADER_INSIDE_ONLY", "1"))
 
     # ---- the boss's hard rules
-    hard_stop_pct: float = field(default_factory=lambda: float(_env("TRADER_HARD_STOP_PCT", "10")))
+    hard_stop_pct: float = field(default_factory=lambda: float(_env("TRADER_HARD_STOP_PCT", "23")))
     priority: str = field(default_factory=lambda: _env("TRADER_PRIORITY", "inside"))
 
     # ---- sizing and risk

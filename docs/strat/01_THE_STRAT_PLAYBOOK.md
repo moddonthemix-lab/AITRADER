@@ -57,7 +57,7 @@ range — the nearest prior high (long) or low (short) beyond the trigger.
 4. **Volume is a tie-breaker, never the reason.** An inside bar on *lighter* volume than usual is a quiet
    coil (good); a breakout bar on *heavier* volume (1.2× its 20-bar average or more) shows participation.
 5. **Bigger timeframe wins ties** (Weekly over Daily over 4-hour). Monthly setups are watched for
-   context but are too wide for the -10% hard stop.
+   context but are too wide for the -23% hard stop.
 
 ## Entries, stops and targets — as thestrat.ai/docs states them
 

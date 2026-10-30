@@ -13,7 +13,7 @@ Pass discipline: a pass needs a MARKET reason —
     conflicting_mtf      timeframes disagree (no continuity, or every setup is against it)
     no_setup_in_window   nothing actionable formed on the setup timeframes during the window
     rr_after_fees        the setup's target doesn't pay enough after fees
-    stop_too_wide        the Strat stop is further than the -10% hard stop allows
+    stop_too_wide        the Strat stop is further than the -23% hard stop allows
     no_chase             it already ran past the trigger
 A data-feed problem is never a pass: Trader retries, falls back to Hyperliquid's own candles, and if a
 market still can't be read it is logged as an INCIDENT (and reported as such), not as a pass.
@@ -41,7 +41,7 @@ MARKET_REASONS = {
     "conflicting_mtf": "conflicting timeframes — no continuity behind any setup",
     "no_setup_in_window": "no setup in the window — nothing actionable formed",
     "rr_after_fees": "the targets don't pay enough after fees",
-    "stop_too_wide": "the Strat stop is wider than the -10% hard stop allows",
+    "stop_too_wide": "the Strat stop is wider than the -23% hard stop allows",
     "no_chase": "it already ran past the trigger — no chasing",
     "playbook": "the Strat documents rule this setup out",
 }

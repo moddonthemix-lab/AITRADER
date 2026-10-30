@@ -1,7 +1,7 @@
 """Trader at work: scan → plan → (approval when live) → enter on the trigger → manage → exit → learn → report.
 
 Every minute (all day, every day — the perps trade 24/7):
-    manage open positions: take profit at the target, trail the stop once in profit, hard stop at -10%
+    manage open positions: take profit at the target, trail the stop once in profit, hard stop at -23%
 During the US cash session (weekdays, TRADER_WINDOW_START–END, New York time):
     every TRADER_SCAN_MINUTES: scan the markets; plan the best setup(s); when nothing qualifies, record the
     MARKET reason for passing; data problems are recorded as incidents

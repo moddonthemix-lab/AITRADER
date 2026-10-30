@@ -106,7 +106,7 @@ def test_live_plans_wait_for_the_boss(journal, wednesday):
     assert plan["status"] == "waiting_approval"
     req = hub.tasks_requested[0]
     assert req["title"].startswith(f"[plan {plan['id']}] LIVE long xyz:NVDA") and req["assignee"] == "trader"
-    assert req["channel"] == "trades" and "10%" in req["details"]
+    assert req["channel"] == "trades" and "23%" in req["details"]
 
     prices["xyz:NVDA"] = 110.1
     e.watch_plans(wednesday)

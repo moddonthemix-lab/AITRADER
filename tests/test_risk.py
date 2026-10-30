@@ -22,7 +22,7 @@ def test_hard_stop_is_ten_percent_of_the_price_with_fees():
 
 
 def test_hard_stop_fires_on_the_real_loss_even_past_the_stop():
-    st = risk.manage(trade(stop=80.0), 89.0)  # a stop set too wide must still not lose more than 10%
+    st = risk.manage(trade(stop=70.0), 76.0)  # a stop set too wide must still not lose more than 23%
     assert st.exit_reason == "hard_stop"
 
 
@@ -60,7 +60,7 @@ def test_short_trades_mirror():
 
 
 def test_levels_reject_stops_wider_than_the_hard_stop_and_thin_targets():
-    assert risk.levels("long", 100, 85, 130).problem == "stop_too_wide"
+    assert risk.levels("long", 100, 70, 130).problem == "stop_too_wide"
     assert risk.levels("long", 100, 96, 101).problem == "rr_after_fees"
     ok = risk.levels("long", 100, 96, 110)
     assert ok.problem is None and ok.rr >= settings.min_rr and ok.target_kind == "strat"

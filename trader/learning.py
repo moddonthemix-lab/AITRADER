@@ -78,7 +78,7 @@ def lesson_prompt(trade: dict[str, Any], playbook: str) -> str:
     return (
         "You are reviewing one of your own closed trades. Write ONE lesson in 2-3 sentences: what the Strat "
         "said, and what actually happened, using ONLY the numbers given below. Do not invent price levels, and do "
-        "not propose new stop, target or trigger numbers. Do not suggest breaking the rules (the -10% hard stop, "
+        "not propose new stop, target or trigger numbers. Do not suggest breaking the rules (the -23% hard stop, "
         "fee-aware targets, inside bars first, the 5-minute invalidation).\n\n"
         f"Trade: {trade['side']} {trade['coin']} — {trade['tf']} {trade['setup']} (grade {trade['grade']}, "
         f"{'inside bar' if trade['inside'] else 'not an inside bar'}, "

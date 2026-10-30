@@ -1,7 +1,7 @@
 """Backtest: replay history bar by bar with the SAME rules Trader trades with.
 
 For each completed bar, the Strat setups built on it (strat.find_setups) are checked against the next
-bars: entry on the break of the trigger (or the open, if it gapped through), the Strat stop, the -10%
+bars: entry on the break of the trigger (or the open, if it gapped through), the Strat stop, the -23%
 hard stop, the fee-aware target and the trailing stop (risk.manage), fees on both sides. Continuity is
 measured at the moment of the trigger, against the higher timeframes' opens (W and M for daily setups;
 M and Q for weekly ones) — so grades match the live scanner: A = full continuity, B = leaning.

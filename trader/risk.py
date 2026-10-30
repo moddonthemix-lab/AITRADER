@@ -1,6 +1,6 @@
 """The money rules, as plain functions (no network, easy to test).
 
-Hard stop: a position is closed before its price moves more than TRADER_HARD_STOP_PCT (10%) against it,
+Hard stop: a position is closed before its price moves more than TRADER_HARD_STOP_PCT (23%) against it,
     fees included — measured on price, so it means the same at any leverage.
 Account use: the margin of all open positions together stays within TRADER_ACCOUNT_USE_PCT (75%) of the
     account; the other 25% is always a free cushion.
@@ -63,7 +63,7 @@ def liquidation_guard(entry: float, side: str, max_leverage: int) -> float:
 
 def effective_stop(entry: float, side: str, strat_stop: float, max_leverage: int) -> tuple[float, str]:
     """The Strat stop, or — when it's beyond the liquidation price at full leverage — the liquidation guard.
-    (The -10% hard stop is always further than both at any leverage above ~2x, and is checked separately.)"""
+    (The -23% hard stop is always further than both at any leverage above ~2x, and is checked separately.)"""
     guard = liquidation_guard(entry, side, max_leverage)
     tighter = max(strat_stop, guard) if side == "long" else min(strat_stop, guard)
     return tighter, ("strat" if tighter == strat_stop else "liquidation guard")
@@ -179,7 +179,7 @@ def manage(t: dict[str, Any], price: float, sz_decimals: int = 2) -> Step:
     reason = None
     loss = -((price - entry) / entry * d - 2 * fee())  # on the position's price, fees in
     if loss >= settings.hard_stop_pct / 100 or (price - t["hard_stop"]) * d <= 0:
-        reason = "hard_stop"  # the boss's -10% rule, checked on the real loss — whatever the stop says
+        reason = "hard_stop"  # the boss's -23% rule, checked on the real loss — whatever the stop says
     elif t.get("target") is not None and (price - t["target"]) * d >= 0:
         reason = "target"
     elif (price - stop) * d <= 0:
