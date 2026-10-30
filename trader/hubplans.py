@@ -30,6 +30,8 @@ TITLE = "trade plan"
 ACTIVE = "open,accepted,in_progress"
 PENDING = "hubplans:pending"          # kv: {task id: record}, the plans still waiting for their close
 TF_OF = {"monthly": "M", "weekly": "W", "daily": "D", "4h": "4H"}
+MAX_ATTEMPTS = 3                     # other errors: 3 tries, then a question to the boss
+RECHECK_SECONDS = 600                 # a 409 or an error: look again in 10 minutes, not every loop
 MAX_BASIS = 0.03                      # Amo's price must be within 3% of Hyperliquid's, or it's not the same market
 
 
@@ -169,22 +171,79 @@ class TradePlans:
 
     # ------------------------------------------------------------------ after the plan's result time
     def settle(self) -> None:
-        """Post each plan's result once the hub's result_after has passed. A result the hub refuses (409) is
-        kept and not retried in a loop; the reason is logged for the boss."""
+        """Post each plan's result once the hub's result_after has passed. Never a loop: a 409 ("too early") waits for the
+        task's result time and checks again later; other errors get 3 tries, then a question to the boss."""
         now = time.time()
         pending = self._load()
+        changed = False
         for pid, record in list(pending.items()):
-            if record.get("refused") or now < float(record["result_after"]):
+            if now < float(record.get("next_try") or 0):
                 continue
-            rows = [self.outcome(row) for row in record["rows"]]
-            pnl = round(sum(r.get("pnl_usd") or 0 for r in rows), 2)
-            fund = round(sum(r.get("funding_usd") or 0 for r in rows), 2)
-            taken = sum(1 for r in rows if r["outcome"] == "TAKEN")
-            open_ = sum(1 for r in rows if r["outcome"] == "TAKEN" and r.get("exit") is None)
-            note = (f"{len(rows)} setup(s): {taken} taken" + (f" ({open_} still open, managed on)" if open_ else "")
-                    + f". P&L {pnl:+.2f} USD after fees and funding (paper). Funding {fund:+.2f} USD"
-                    + (" (estimated)." if taken else "."))
-            self._post(record["task"], rows, note)
+            if record.get("result_after") is None:  # saved by an older Trader: take the time from the hub's task
+                if not self._refetch(pid, record):
+                    changed = True
+                    pending.pop(pid, None)  # the hub says it's done or declined: drop it quietly
+                    continue
+                changed = True
+            until = float(record.get("result_after") or 0)
+            if not until or now < until:
+                continue
+            try:
+                rows = [self.outcome(row) for row in record.get("rows", [])]
+                pnl = round(sum(r.get("pnl_usd") or 0 for r in rows), 2)
+                fund = round(sum(r.get("funding_usd") or 0 for r in rows), 2)
+                taken = sum(1 for r in rows if r.get("outcome") == "TAKEN")
+                open_ = sum(1 for r in rows if r.get("outcome") == "TAKEN" and r.get("exit") is None)
+                note = (f"{len(rows)} setup(s): {taken} taken" + (f" ({open_} still open, managed on)" if open_ else "")
+                        + f". P&L {pnl:+.2f} USD after fees and funding (paper). Funding {fund:+.2f} USD"
+                        + (" (estimated)." if taken else "."))
+                self._post(record.get("task") or {"id": pid}, rows, note)
+                pending.pop(pid, None)  # posted
+                changed = True
+            except Exception as e:  # noqa: BLE001
+                changed = True
+                if getattr(e, "status", None) == 409:  # "too early": wait for the task's result time, then look again
+                    record["next_try"] = now + RECHECK_SECONDS
+                    log.info("trade plan task %s: the hub says it's too early (%s); checking again later",
+                             pid, getattr(e, "message", e))
+                    continue
+                record["attempts"] = int(record.get("attempts") or 0) + 1
+                log.exception("trade plan task %s: couldn't post the result (attempt %d of %d)",
+                              pid, record["attempts"], MAX_ATTEMPTS)
+                record["next_try"] = now + RECHECK_SECONDS
+                if record["attempts"] >= MAX_ATTEMPTS:
+                    record["failed"] = f"{type(e).__name__}: {e}"
+                    self._ask_boss(pid, record)
+        if changed:
+            self._save(pending)
+
+    def _refetch(self, pid: str, record: dict[str, Any]) -> bool:
+        """Ask the hub for this task again: its result_after (and its status). False = done or declined: drop it."""
+        try:
+            data = self.hub.task(int(pid)) or {}
+        except Exception as e:  # noqa: BLE001
+            log.exception("trade plan task %s: couldn't re-read the task from the hub", pid)
+            record["next_try"] = time.time() + RECHECK_SECONDS
+            return True
+        task = data.get("task", data) if isinstance(data, dict) else {}
+        if task.get("status") in ("done", "declined"):
+            log.info("trade plan task %s is %s on the hub: dropping the local copy", pid, task.get("status"))
+            return False
+        if task.get("result_after") is None:
+            record["next_try"] = time.time() + RECHECK_SECONDS
+            log.warning("trade plan task %s: the hub hasn't given a result time yet; checking again later", pid)
+            return True
+        record["result_after"] = float(task["result_after"])
+        record["task"] = {**(record.get("task") or {}), "id": task.get("id", pid), "channel": task.get("channel"),
+                          "expects_form": task.get("expects_form"), "title": task.get("title")}
+        return True
+
+    def _ask_boss(self, pid: str, record: dict[str, Any]) -> None:
+        try:
+            self.hub.ask("trades", f"Trade plan task {pid} couldn't be posted after {MAX_ATTEMPTS} tries: "
+                                   f"{record.get('failed')}. I've stopped trying; please check it.", to="boss")
+        except Exception:  # noqa: BLE001
+            log.exception("trade plan task %s: couldn't ask the boss", pid)
 
     def outcome(self, row: dict[str, Any]) -> dict[str, Any]:
         if row["outcome"] != "PENDING":
@@ -218,27 +277,17 @@ class TradePlans:
 
     # ------------------------------------------------------------------ posting in the task's format
     def _post(self, task: dict[str, Any], items: list[dict[str, Any]], note: str) -> None:
+        task_id = task.get("id")
         channel = task.get("channel") or "tasks"
         form_name = task.get("expects_form")
-        try:
-            if form_name:  # the hub's own form for this task: its shape, its name
-                self.hub.post_result(task["id"], summary=note, channel=channel,
-                                     form={"name": form_name, "items": items, "note": note})
-            else:  # no form asked for: a plain line per setup
-                lines = [f"{r.get('symbol')}: {r.get('outcome')}" + (f" ({r['reason']})" if r.get("reason") else "")
-                         for r in items]
-                self.hub.post_result(task["id"], summary="\n".join(lines + [note]), channel=channel)
-        except Exception as e:  # noqa: BLE001
-            if getattr(e, "status", None) != 409:
-                raise  # anything else: try again next time round
-            # The hub won't take it yet. Keep the plan, don't loop: the boss sees the reason.
-            pending = self._load()
-            if str(task["id"]) in pending:
-                pending[str(task["id"])]["refused"] = str(getattr(e, "message", e))
-                self._save(pending)
-            log.warning("trade plan task %s refused by the hub: %s", task["id"], getattr(e, "message", e))
-            return
+        if form_name:  # the hub's own form for this task: its shape, its name
+            self.hub.post_result(task_id, summary=note, channel=channel,
+                                 form={"name": form_name, "items": items, "note": note})
+        else:  # no form asked for: a plain line per setup
+            lines = [f"{r.get('symbol')}: {r.get('outcome')}" + (f" ({r['reason']})" if r.get("reason") else "")
+                     for r in items]
+            self.hub.post_result(task_id, summary="\n".join(lines + [note]), channel=channel)
+        log.info("trade plan task %s posted (%s)", task_id, note)
         pending = self._load()
-        pending.pop(str(task["id"]), None)
+        pending.pop(str(task_id), None)
         self._save(pending)
-        log.info("trade plan task %s posted (%s)", task["id"], note)

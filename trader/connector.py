@@ -183,13 +183,13 @@ class Connector:
         try:
             self.plans.sync()
         except Exception as e:  # noqa: BLE001
-            log.info("hub: couldn't sync the trade plans (%s)", type(e).__name__)
+            log.exception("hub: couldn't sync the trade plans (%s)", type(e).__name__)
 
     def settle_plans(self) -> None:
         try:
             self.plans.settle()
         except Exception as e:  # noqa: BLE001
-            log.info("hub: couldn't post a trade plan result (%s)", type(e).__name__)
+            log.exception("hub: couldn't settle the trade plans (%s)", type(e).__name__)
 
     def on_hub_error(self, e: Any, item: dict[str, Any] | None = None) -> None:
         if e.status == 429:

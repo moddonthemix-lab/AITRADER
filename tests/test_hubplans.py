@@ -121,4 +121,75 @@ def test_a_409_from_the_hub_is_kept_and_not_retried_in_a_loop(journal, monkeypat
     tp.settle()
     tp.settle()  # the next minute: still refused, nothing re-sent
     record = json.loads(journal.get(hubplans.PENDING))["41"]
-    assert record["refused"] == "accepted from Friday 6:30 PM"
+    assert record["next_try"] > now.timestamp() + 10 ** 6  # waiting to be checked again, not dropped
+
+
+class HubWithTasks(FakeHub):
+    def __init__(self, tasks, by_id):
+        super().__init__(tasks)
+        self.by_id, self.asked, self.posts = by_id, [], 0
+
+    def task(self, task_id):
+        return self.by_id.get(task_id, {})
+
+    def ask(self, channel, text, to=None, reply_to=None):
+        self.asked.append(text)
+
+
+def test_an_old_record_takes_its_result_time_from_the_hub(journal, monkeypatch):
+    now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
+    tp = hubplans.TradePlans(engine_for(journal, now), HubWithTasks([], {}), lambda: {})
+    old = {"51": {"task": {"id": 51, "channel": "trades", "expects_form": "trade_report"}, "rows": [], "closes": "x"}}
+    journal.set(hubplans.PENDING, json.dumps(old))
+    tp.hub.by_id[51] = {"id": 51, "status": "in_progress", "result_after": RESULT_AFTER, "expects_form": "trade_report"}
+    monkeypatch.setattr(hubplans.time, "time", lambda: datetime(2026, 10, 29, 18, 35, tzinfo=NY).timestamp())
+    tp.settle()
+    assert tp.hub.results and tp.hub.results[0]["task"] == 51
+
+
+def test_an_old_record_the_hub_marks_done_is_dropped_quietly(journal, monkeypatch):
+    now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
+    hub = HubWithTasks([], {52: {"id": 52, "status": "done"}})
+    tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
+    journal.set(hubplans.PENDING, json.dumps({"52": {"task": {"id": 52}, "rows": [], "closes": "x"}}))
+    tp.settle()
+    assert hub.results == [] and json.loads(journal.get(hubplans.PENDING)) == {}
+
+
+def test_a_409_waits_and_is_not_sent_again_straight_away(journal, monkeypatch):
+    class TooEarly(Exception):
+        status, message = 409, "accepted from Friday 6:30 PM"
+
+    now = datetime(2026, 10, 29, 18, 35, tzinfo=NY)
+    monkeypatch.setattr(hubplans.time, "time", lambda: now.timestamp())
+    hub = HubWithTasks([], {})
+    calls = {"n": 0}
+
+    def refuse(*a, **k):
+        calls["n"] += 1
+        raise TooEarly()
+    hub.post_result = refuse
+    tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
+    journal.set(hubplans.PENDING, json.dumps({"53": {"task": {"id": 53}, "rows": [], "result_after": RESULT_AFTER}}))
+    tp.settle()
+    tp.settle()  # the very next loop: waiting, not sending again
+    assert calls["n"] == 1 and json.loads(journal.get(hubplans.PENDING))["53"]["next_try"] > now.timestamp()
+
+
+def test_three_other_errors_end_in_a_question_to_the_boss(journal, monkeypatch):
+    now = datetime(2026, 10, 29, 18, 35, tzinfo=NY)
+    monkeypatch.setattr(hubplans.time, "time", lambda: now.timestamp() + 10 ** 6)
+    hub = HubWithTasks([], {})
+
+    def broken(*a, **k):
+        raise OSError("the hub is down")
+    hub.post_result = broken
+    tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
+    journal.set(hubplans.PENDING, json.dumps({"54": {"task": {"id": 54}, "rows": [], "result_after": RESULT_AFTER}}))
+    for _ in range(3):
+        tp.settle()
+        rec = json.loads(journal.get(hubplans.PENDING))["54"]
+        rec["next_try"] = 0  # the next check comes around (each one is 10 minutes apart in real use)
+        journal.set(hubplans.PENDING, json.dumps({"54": rec}))
+    assert "OSError" in json.loads(journal.get(hubplans.PENDING))["54"]["failed"]
+    assert len(hub.asked) == 1 and "54" in hub.asked[0]
