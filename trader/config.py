@@ -100,6 +100,9 @@ class Settings:
     max_symbols: int = field(default_factory=lambda: int(_env("TRADER_MAX_SYMBOLS", "25")))
     # Stocks and stock indexes only (no gold, oil or currencies) unless the watchlist names them.
     stocks_only: bool = field(default_factory=lambda: _flag("TRADER_STOCKS_ONLY", "1"))
+    # Around the clock: stocks and indexes are scanned, watched and entered at any hour, as Hyperliquid's stock perps
+    # trade. 0 = the session window only (9:30–15:45 New York, weekdays).
+    around_the_clock: bool = field(default_factory=lambda: _flag("TRADER_AROUND_THE_CLOCK", "1"))
     # Crypto on Hyperliquid's main market, traded on daily setups only. Blank = no crypto.
     crypto: list[str] = field(default_factory=lambda: _list("TRADER_CRYPTO", "BTC"))
     # The focus: daily inside bars, and 3-1 setups (3-1-2) on the 4-hour. Set 0 to take all daily/4-hour setups.

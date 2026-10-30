@@ -1,7 +1,7 @@
 """Entries (a 5-minute close beyond the Strat trigger, from 9:40), finished bars outside the session, the game
 plan before the open / after the close, and the boss's documents having a say."""
 
-from datetime import date, datetime, time as dtime, timedelta
+from datetime import date, datetime, time as dtime, timedelta, timezone
 
 import pytest
 from conftest import DAILY_INSIDE, FakeBrain, FakeHub, failing_source, inst, source_for
@@ -125,7 +125,9 @@ def five(now, close):
     return Bar(int(start.timestamp()), close, close, close, close)
 
 
-def test_a_touch_is_not_an_entry_a_5_minute_close_is(journal, wednesday, five_min):
+def test_a_touch_is_not_an_entry_a_5_minute_close_is(journal, wednesday, five_min, monkeypatch):
+    from trader import engine as engine_module
+    monkeypatch.setattr(engine_module, "now_iso", lambda: wednesday.astimezone(timezone.utc).isoformat(timespec="seconds"))
     prices, candle = {"xyz:NVDA": 108.5}, {"bar": None}
     e, _ = engine_with(journal, wednesday, prices, candle)
     e.scan(wednesday)
@@ -146,7 +148,8 @@ def test_yesterdays_candle_doesnt_confirm_today(journal, wednesday, five_min):
     assert not journal.open_trades()
 
 
-def test_no_entries_before_930_or_after_1545():
+def test_no_entries_before_930_or_after_1545(monkeypatch):
+    monkeypatch.setattr(settings, "around_the_clock", False)  # the session window (the default is around the clock)
     assert not entries_open(datetime(2026, 10, 14, 9, 25, tzinfo=NY))
     assert entries_open(datetime(2026, 10, 14, 9, 35, tzinfo=NY))
     assert entries_open(datetime(2026, 10, 14, 15, 45, tzinfo=NY))

@@ -37,7 +37,7 @@ These are enforced in code. Trader explains them; he never bends them.
   sells at market. Reason: `invalid`.
 - **Bitcoin (BTC) on the main Hyperliquid market**, **daily and 4-hour inside bars only**, trading around the clock
   (`TRADER_CRYPTO=BTC`). BTC's bars and plan expiry follow the UTC clock (4-hour blocks, daily at 00:00 UTC).
-- Stocks and indexes trade only in the session window (9:30–15:45 New York, weekdays).
+- Stocks and indexes trade around the clock (`TRADER_AROUND_THE_CLOCK=1`), as Hyperliquid's stock perps do. Set it to 0 for the session window only (9:30–15:45 New York, weekdays).
 - Stocks and stock indexes on the HIP-3 markets, as before.
 
 ## Activity rules

@@ -30,7 +30,7 @@ from .journal import NY, Journal, now_iso, ny_now, week_start
 from .knowledge import library
 from .market import Bar, DataFeedError
 from .config import is_crypto
-from .session import session_source
+from .session import next_session, session_source
 
 log = logging.getLogger(__name__)
 
@@ -44,18 +44,32 @@ def _hm(s: str) -> dtime:
 
 
 def in_window(now: datetime) -> bool:
-    """Scanning hours: from the open (9:30) to the last entry time (15:45), weekdays."""
+    """Scanning hours: from the open (9:30) to the last entry time (15:45), weekdays. Around the clock: always."""
+    if settings.around_the_clock:
+        return True
     now = now.astimezone(NY)
     return now.weekday() < 5 and _hm(settings.scan_start) <= now.time() <= _hm(settings.window_end)
 
 
 def entries_open(now: datetime) -> bool:
-    """Entry hours: 9:40 (the second 5-minute candle has closed) to 15:45, weekdays."""
+    """Entry hours: 9:30 to 15:45, weekdays. Around the clock: always."""
+    if settings.around_the_clock:
+        return True
     now = now.astimezone(NY)
     return now.weekday() < 5 and _hm(settings.window_start) <= now.time() <= _hm(settings.window_end)
 
 
 def bar_close(tf: str, now: datetime, crypto: bool = False) -> datetime:
+    """When the bar the trigger lives in closes. After today's close, that's the next session's bar, so an evening
+    plan waits for the next open (around the clock, stocks trade at any hour too)."""
+    if not crypto and tf in ("D", "4H"):
+        day = next_session(now)
+        if day != now.astimezone(NY).date():
+            return datetime.combine(day, dtime(13, 30) if tf == "4H" else dtime(16, 0), NY)
+    return _bar_close(tf, now, crypto)
+
+
+def _bar_close(tf: str, now: datetime, crypto: bool = False) -> datetime:
     """When the bar the trigger lives in closes: the plan expires then. Stocks: the New York session. Crypto
     (BTC): its daily bar closes at 00:00 UTC."""
     if crypto:  # BTC: its 4-hour and daily bars close on the UTC clock
@@ -400,7 +414,7 @@ class Engine:
                 if not self.hub_plan(p):  # a hub Trade plan is posted as one result after the close (hubplans.py)
                     self._task_update(p["task_id"], "done", f"Cancelled: price hit the stop side ({px:g}) before the trigger.")
                 continue
-            triggered = self.confirmed(d, now, px, sign)
+            triggered = self.confirmed(d, now, px, sign, armed_at=p["created_at"])
             chase = settings.max_chase_r * abs(d["entry"] - d["stop"])
             if triggered and (px - d["entry"]) * sign <= chase:
                 self.enter(p, d, px)
@@ -409,7 +423,7 @@ class Engine:
                                                  "updated_at": now_iso()})
                 self._task_update(p["task_id"], "done", f"Skipped: it ran past the trigger ({px:g}). No chasing.")
 
-    def confirmed(self, d: dict[str, Any], now: datetime, px: float, sign: int) -> bool:
+    def confirmed(self, d: dict[str, Any], now: datetime, px: float, sign: int, armed_at: str | None = None) -> bool:
         """The Strat trigger, confirmed: a finished 5-minute candle CLOSED beyond the trigger during today's
         session (TRADER_ENTRY_CONFIRM=5m). With "break" (the default), the first print through the trigger —
         wicks included — is the entry: thestrat.ai, "the break is the confirmation"."""
@@ -422,10 +436,12 @@ class Engine:
             return False
         if bar is None:
             return False
-        opened = datetime.fromtimestamp(bar.t, NY)
-        if not is_crypto(d["coin"]) and (opened.date() != now.astimezone(NY).date()
-                                         or opened.time() < _hm(settings.scan_start)):
-            return False  # only candles from today's session count (crypto trades around the clock)
+        if armed_at and bar.t + 300 < datetime.fromisoformat(armed_at).timestamp():
+            return False  # a candle that finished before the plan was armed doesn't confirm it
+        if not settings.around_the_clock and not is_crypto(d["coin"]):
+            opened = datetime.fromtimestamp(bar.t, NY)
+            if opened.date() != now.astimezone(NY).date() or opened.time() < _hm(settings.scan_start):
+                return False  # the session window only: today's candles count
         return (bar.c - d["entry"]) * sign > 0
 
     def entry_bar_stop(self, d: dict[str, Any]) -> float:
