@@ -136,6 +136,19 @@ def universe(watchlist: list[str] | None = None, instruments: list[Instrument] |
     return sorted(best.values(), key=lambda m: -m.day_volume)[:settings.max_symbols]
 
 
+def funding_rate(coin: str) -> float:
+    """Hyperliquid's hourly funding rate for this market (positive: longs pay shorts). 0 if it can't be read."""
+    dex = coin.split(":")[0] if ":" in coin else ""
+    try:
+        meta, ctxs = _info({"type": "metaAndAssetCtxs", **({"dex": dex} if dex else {})})
+    except (DataFeedError, ValueError, TypeError):
+        return 0.0
+    for u, c in zip(meta.get("universe", []), ctxs):
+        if u.get("name") == coin:
+            return float(c.get("funding") or 0)
+    return 0.0
+
+
 def mids(dexes: list[str] | None = None) -> dict[str, float]:
     out: dict[str, float] = {}
     for dex in dexes or settings.dexes:

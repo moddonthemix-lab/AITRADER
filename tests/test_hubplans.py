@@ -1,6 +1,7 @@
 """Trade plans from the hub: only active tasks, newest wins, older ones replaced, results after the close."""
 
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 
 from trader import hubplans
@@ -24,9 +25,12 @@ class FakeHub:
         self.results.append({"task": task_id, "summary": summary, "channel": channel, "form": form})
 
 
+RESULT_AFTER = datetime(2026, 10, 29, 18, 30, tzinfo=NY).timestamp()  # the hub's time for this plan (from the task)
+
+
 def plan(task_id, status="open", items=None, title="Trade plan"):
     return {"id": task_id, "title": title, "status": status, "channel": "trades", "expects_form": "trade_report",
-            "form": {"name": "trade_setup", "items": items or []}}
+            "form": {"name": "trade_setup", "items": items or []}, "result_after": RESULT_AFTER}
 
 
 def engine_for(journal, now):
@@ -59,14 +63,14 @@ def test_newest_plan_is_worked_and_older_ones_are_replaced(journal):
     assert hub.updates[-1][0] == 9 and hub.updates[-1][1] == "in_progress"  # the newest is held in progress
 
 
-def test_setup_not_on_hyperliquid_is_reported_not_traded(journal):
+def test_setup_not_on_hyperliquid_is_reported_not_traded(journal, monkeypatch):
     now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
     hub = FakeHub([plan(11, items=[setup_item("ZZZZ")])])
     tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
     tp.sync()
     assert hub.results == []  # held until the close
-    later = datetime(2026, 10, 29, 16, 10, tzinfo=NY)
-    tp.engine.clock = lambda: later
+    later = datetime(2026, 10, 29, 18, 35, tzinfo=NY)  # after the hub's result_after
+    monkeypatch.setattr(hubplans.time, "time", lambda: later.timestamp())
     tp.settle()
     assert len(hub.results) == 1
     form = hub.results[0]["form"]
@@ -93,3 +97,28 @@ def test_unreadable_text_blocks_the_plan_instead_of_saying_no_setups(journal):
     tp.sync()
     assert hub.results == []
     assert hub.updates[-1][1] == "blocked" and "couldn't read the setups" in hub.updates[-1][2]
+
+
+def test_no_result_time_from_the_hub_means_no_guessing(journal):
+    now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
+    task = plan(31, items=[setup_item("ZZZZ")])
+    task.pop("result_after")
+    hub = FakeHub([task])
+    hubplans.TradePlans(engine_for(journal, now), hub, lambda: {}).sync()
+    assert hub.updates[-1][1] == "blocked" and "result time" in hub.updates[-1][2]
+
+
+def test_a_409_from_the_hub_is_kept_and_not_retried_in_a_loop(journal, monkeypatch):
+    class Refused(Exception):
+        status, message = 409, "accepted from Friday 6:30 PM"
+
+    now = datetime(2026, 10, 28, 20, 0, tzinfo=NY)
+    hub = FakeHub([plan(41, items=[setup_item("ZZZZ")])])
+    tp = hubplans.TradePlans(engine_for(journal, now), hub, lambda: {})
+    tp.sync()
+    monkeypatch.setattr(hubplans.time, "time", lambda: now.timestamp() + 10 ** 6)
+    hub.post_result = lambda *a, **k: (_ for _ in ()).throw(Refused())
+    tp.settle()
+    tp.settle()  # the next minute: still refused, nothing re-sent
+    record = json.loads(journal.get(hubplans.PENDING))["41"]
+    assert record["refused"] == "accepted from Friday 6:30 PM"

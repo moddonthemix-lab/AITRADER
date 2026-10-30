@@ -15,20 +15,20 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, time as dtime
+import time
+from datetime import datetime
 from typing import Any, Callable
 
-from . import risk, strat, strategy
+from . import hyperliquid as hl, risk, strat, strategy
 from .config import settings
 from .journal import NY, now_iso
-from .session import is_crypto, next_session
+from .session import is_crypto
 
 log = logging.getLogger(__name__)
 
 TITLE = "trade plan"
 ACTIVE = "open,accepted,in_progress"
 PENDING = "hubplans:pending"          # kv: {task id: record}, the plans still waiting for their close
-SETTLE_AFTER = dtime(16, 5)           # results go out a few minutes after the close
 TF_OF = {"monthly": "M", "weekly": "W", "daily": "D", "4h": "4H"}
 MAX_BASIS = 0.03                      # Amo's price must be within 3% of Hyperliquid's, or it's not the same market
 
@@ -105,6 +105,11 @@ class TradePlans:
 
     def start(self, task: dict[str, Any]) -> None:
         pid = str(task["id"])
+        until = task.get("result_after")  # the hub's own end time for this plan: never worked out here
+        if not until:
+            self.hub.update_task(task["id"], "blocked", "The hub didn't send this plan's result time (result_after), so "
+                                                          "I can't tell when to stop watching it. Please resend the plan.")
+            return
         items = (task.get("form") or {}).get("items") or []
         if not items:  # no form yet: the setups are in the task's text (after "--- From Amo's result")
             items = setups_from_text(task.get("details") or "")
@@ -112,16 +117,17 @@ class TradePlans:
             self.hub.update_task(task["id"], "blocked", "I couldn't read the setups in this plan (no form, and the text "
                                                           "isn't in the key: value format). Amo needs to resend it.")
             return
-        rows = [self.plan_item(item, task) for item in items[:5]]
-        self.hub.update_task(task["id"], "in_progress", f"Holding {len(rows)} setup(s) for the next session.")
+        rows = [self.plan_item(item, task, float(until)) for item in items[:5]]
+        self.hub.update_task(task["id"], "in_progress", f"Holding {len(rows)} setup(s) until "
+                                                          f"{datetime.fromtimestamp(float(until), NY):%a %H:%M} New York.")
         pending = self._load()
         pending[pid] = {"task": {"id": task["id"], "channel": task.get("channel"), "expects_form": task.get("expects_form"),
                                  "title": task.get("title")},
-                        "rows": rows, "closes": self.next_close().isoformat()}
+                        "rows": rows, "result_after": float(until)}
         self._save(pending)
 
     # ------------------------------------------------------------------ one setup from the plan
-    def plan_item(self, item: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    def plan_item(self, item: dict[str, Any], task: dict[str, Any], until: float) -> dict[str, Any]:
         symbol = str(item.get("symbol") or "").strip().upper()
         row: dict[str, Any] = {"symbol": symbol, "pattern": item.get("pattern"), "direction": item.get("direction"),
                                "plan_id": None, "outcome": None, "reason": None}
@@ -157,53 +163,82 @@ class TradePlans:
         cand = strategy.Candidate(inst, setup, lv, "A", "stop", 0.0, "hub", 1.0, str(item.get("why") or ""),
                                   str(item.get("continuity") or ""))
         pid = self.engine.make_plan(cand, self.engine.clock())
-        self.j.update("plans", pid, {"task_id": task["id"], "expires_at": self.next_close().isoformat()})
+        self.j.update("plans", pid, {"task_id": task["id"],
+                                     "expires_at": datetime.fromtimestamp(until, NY).isoformat()})
         return {**row, "plan_id": pid, "outcome": "PENDING"}
 
-    def next_close(self) -> datetime:
-        return datetime.combine(next_session(self.engine.clock()), dtime(16, 0), NY)
-
-    # ------------------------------------------------------------------ after the close
+    # ------------------------------------------------------------------ after the plan's result time
     def settle(self) -> None:
-        """Post each plan's result once its session has closed. Results go in the task's own form."""
-        now = self.engine.clock().astimezone(NY)
+        """Post each plan's result once the hub's result_after has passed. A result the hub refuses (409) is
+        kept and not retried in a loop; the reason is logged for the boss."""
+        now = time.time()
         pending = self._load()
         for pid, record in list(pending.items()):
-            if now < datetime.fromisoformat(record["closes"]) or now.time() < SETTLE_AFTER:
+            if record.get("refused") or now < float(record["result_after"]):
                 continue
             rows = [self.outcome(row) for row in record["rows"]]
             pnl = round(sum(r.get("pnl_usd") or 0 for r in rows), 2)
+            fund = round(sum(r.get("funding_usd") or 0 for r in rows), 2)
             taken = sum(1 for r in rows if r["outcome"] == "TAKEN")
-            note = f"{len(rows)} setup(s): {taken} taken, P&L {pnl:+.2f} USD after fees (paper)."
+            open_ = sum(1 for r in rows if r["outcome"] == "TAKEN" and r.get("exit") is None)
+            note = (f"{len(rows)} setup(s): {taken} taken" + (f" ({open_} still open, managed on)" if open_ else "")
+                    + f". P&L {pnl:+.2f} USD after fees and funding (paper). Funding {fund:+.2f} USD"
+                    + (" (estimated)." if taken else "."))
             self._post(record["task"], rows, note)
-            del pending[pid]
-            self._save(pending)
 
     def outcome(self, row: dict[str, Any]) -> dict[str, Any]:
         if row["outcome"] != "PENDING":
-            return {k: row.get(k) for k in ("symbol", "outcome", "reason", "mode")} | {"mode": "paper"}
+            return {k: row.get(k) for k in ("symbol", "outcome", "reason")} | {"mode": "paper"}
         trade = self.j.one("SELECT * FROM trades WHERE plan_id = ?", (row["plan_id"],))
         if trade:
+            cost = self.funding_cost(trade)  # positive = paid
+            closed = trade["exit"] is not None
             return {"symbol": row["symbol"], "outcome": "TAKEN", "reason": None, "entry": trade["entry"],
-                    "exit": trade["exit"], "pnl_usd": trade["pnl"], "fees_usd": trade["fees"],
-                    "r_multiple": trade["r_multiple"], "mode": trade["mode"]}
+                    "exit": trade["exit"],
+                    "pnl_usd": round(trade["pnl"] - cost, 2) if closed else None,
+                    "fees_usd": round((trade["fees"] or 0) + cost, 2),
+                    "funding_usd": -round(cost, 2),  # shown negative when it's a cost
+                    "r_multiple": trade["r_multiple"] if closed else None, "mode": trade["mode"]}
         plan = self.j.one("SELECT status, note FROM plans WHERE id = ?", (row["plan_id"],)) or {}
         if plan.get("status") == "invalid":
             return {"symbol": row["symbol"], "outcome": "BLOCKED", "reason": plan.get("note"), "mode": "paper"}
         return {"symbol": row["symbol"], "outcome": "NOT TRIGGERED", "reason": None, "mode": "paper"}
 
+    def funding_cost(self, trade: dict[str, Any]) -> float:
+        """Funding paid on a trade (positive = a cost). Paper: estimated from the market's hourly rate over the hours
+        the trade was open. Longs pay when the rate is positive; shorts receive."""
+        try:
+            rate = hl.funding_rate(trade["coin"])
+        except Exception:  # noqa: BLE001 — no rate now: no funding estimate, and the note says so
+            return 0.0
+        end = datetime.fromisoformat(trade["closed_at"]) if trade["closed_at"] else self.engine.clock()
+        hours = max(0.0, (end - datetime.fromisoformat(trade["opened_at"])).total_seconds() / 3600)
+        notional = trade["entry"] * trade["size"]
+        return notional * rate * hours * (1 if trade["side"] == "long" else -1)
+
     # ------------------------------------------------------------------ posting in the task's format
     def _post(self, task: dict[str, Any], items: list[dict[str, Any]], note: str) -> None:
+        channel = task.get("channel") or "tasks"
+        form_name = task.get("expects_form")
+        try:
+            if form_name:  # the hub's own form for this task: its shape, its name
+                self.hub.post_result(task["id"], summary=note, channel=channel,
+                                     form={"name": form_name, "items": items, "note": note})
+            else:  # no form asked for: a plain line per setup
+                lines = [f"{r.get('symbol')}: {r.get('outcome')}" + (f" ({r['reason']})" if r.get("reason") else "")
+                         for r in items]
+                self.hub.post_result(task["id"], summary="\n".join(lines + [note]), channel=channel)
+        except Exception as e:  # noqa: BLE001
+            if getattr(e, "status", None) != 409:
+                raise  # anything else: try again next time round
+            # The hub won't take it yet. Keep the plan, don't loop: the boss sees the reason.
+            pending = self._load()
+            if str(task["id"]) in pending:
+                pending[str(task["id"])]["refused"] = str(getattr(e, "message", e))
+                self._save(pending)
+            log.warning("trade plan task %s refused by the hub: %s", task["id"], getattr(e, "message", e))
+            return
         pending = self._load()
         pending.pop(str(task["id"]), None)
         self._save(pending)
-        channel = task.get("channel") or "tasks"
-        form_name = task.get("expects_form")
-        if form_name:  # the hub's own form for this task: its shape, its name
-            self.hub.post_result(task["id"], summary=note, channel=channel,
-                                 form={"name": form_name, "items": items, "note": note})
-        else:  # no form asked for: a plain line per setup
-            lines = [f"{r.get('symbol')}: {r.get('outcome')}" + (f" ({r['reason']})" if r.get("reason") else "")
-                     for r in items]
-            self.hub.post_result(task["id"], summary="\n".join(lines + [note]), channel=channel)
         log.info("trade plan task %s posted (%s)", task["id"], note)

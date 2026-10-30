@@ -52,6 +52,13 @@ def _print(obj: Any) -> None:
 
 
 # ------------------------------------------------------------------ commands
+def cmd_autostart(a: argparse.Namespace) -> int:
+    from . import autostart
+
+    print({"install": autostart.install, "status": autostart.status, "remove": autostart.remove}[a.action]())
+    return 0
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     ok = True
 
@@ -496,6 +503,9 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("close")
     s.add_argument("trade_id", type=int)
     s.set_defaults(fn=cmd_close)
+    s = sub.add_parser("autostart", help="install | status | remove: keep Trader running, start at login")
+    s.add_argument("action", nargs="?", default="status", choices=["install", "status", "remove"])
+    s.set_defaults(fn=cmd_autostart)
     s = sub.add_parser("wallet")
     s.add_argument("action", nargs="?", default="status", choices=["new", "status", "unified-account"])
     s.add_argument("--yes", action="store_true")
